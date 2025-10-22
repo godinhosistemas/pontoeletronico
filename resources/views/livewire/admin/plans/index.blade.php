@@ -179,8 +179,6 @@ new class extends Component {
 }; ?>
 
 <div>
-    @section('page-title', 'Gerenciar Planos')
-
     <!-- Header with Search and Create Button -->
     <div class="mb-4 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
         <div class="w-full sm:w-96">

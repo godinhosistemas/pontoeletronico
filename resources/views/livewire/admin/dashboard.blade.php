@@ -5,6 +5,8 @@ use App\Models\Tenant;
 use App\Models\Plan;
 use App\Models\Subscription;
 use App\Models\User;
+use App\Models\Employee;
+use App\Models\TimeEntry;
 
 new class extends Component {
     public $totalTenants = 0;
@@ -15,7 +17,8 @@ new class extends Component {
 
     public function mount(): void
     {
-        if (auth()->user()->isSuperAdmin()) {
+        // Apenas super-admin pode ver estatísticas de tenants
+        if (auth()->user()->can('tenants.view')) {
             $this->totalTenants = Tenant::count();
             $this->activeTenants = Tenant::where('is_active', true)->count();
             $this->totalSubscriptions = Subscription::where('status', 'active')->count();
@@ -33,7 +36,7 @@ new class extends Component {
 <div>
     @section('page-title', 'Dashboard')
 
-    @if(auth()->user()->isSuperAdmin())
+    @can('tenants.view')
     <!-- Statistics Cards -->
     <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
         <!-- Total Tenants -->
@@ -178,9 +181,53 @@ new class extends Component {
     </div>
     @else
     <!-- Tenant Dashboard -->
-    <div class="bg-white rounded-lg shadow p-6">
-        <h2 class="text-xl font-semibold text-gray-900 mb-4">Bem-vindo ao Ponto Eletrônico</h2>
-        <p class="text-gray-600">Seu painel de controle será configurado em breve.</p>
+    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+        <!-- Card de Boas-vindas -->
+        <div class="lg:col-span-3 bg-gradient-to-r from-blue-600 to-indigo-600 rounded-2xl shadow-xl p-8 text-white">
+            <h2 class="text-3xl font-bold mb-2">Bem-vindo ao Ponto Eletrônico</h2>
+            <p class="text-blue-100">{{ auth()->user()->tenant ? auth()->user()->tenant->name : 'Seu painel de controle' }}</p>
+        </div>
+
+        <!-- Estatísticas do Tenant -->
+        @can('employees.view')
+        <div class="bg-gradient-to-br from-green-500 to-emerald-600 rounded-2xl shadow-xl p-6 text-white">
+            <div class="flex items-center justify-between mb-4">
+                <div class="p-3 bg-white/20 backdrop-blur-lg rounded-xl">
+                    <svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z"></path>
+                    </svg>
+                </div>
+            </div>
+            <p class="text-white/80 text-sm font-medium mb-1">Total de Funcionários</p>
+            <p class="text-4xl font-bold">{{ \App\Models\Employee::where('tenant_id', auth()->user()->tenant_id)->count() }}</p>
+        </div>
+        @endcan
+
+        @can('timesheet.view')
+        <div class="bg-gradient-to-br from-purple-500 to-indigo-600 rounded-2xl shadow-xl p-6 text-white">
+            <div class="flex items-center justify-between mb-4">
+                <div class="p-3 bg-white/20 backdrop-blur-lg rounded-xl">
+                    <svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                    </svg>
+                </div>
+            </div>
+            <p class="text-white/80 text-sm font-medium mb-1">Registros Hoje</p>
+            <p class="text-4xl font-bold">{{ \App\Models\TimeEntry::whereDate('clock_in', today())->whereHas('employee', fn($q) => $q->where('tenant_id', auth()->user()->tenant_id))->count() }}</p>
+        </div>
+        @endcan
+
+        <div class="bg-gradient-to-br from-amber-500 to-orange-600 rounded-2xl shadow-xl p-6 text-white">
+            <div class="flex items-center justify-between mb-4">
+                <div class="p-3 bg-white/20 backdrop-blur-lg rounded-xl">
+                    <svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                    </svg>
+                </div>
+            </div>
+            <p class="text-white/80 text-sm font-medium mb-1">Plano Ativo</p>
+            <p class="text-2xl font-bold">{{ auth()->user()->tenant?->activeSubscription?->plan?->name ?? 'Nenhum' }}</p>
+        </div>
     </div>
-    @endif
+    @endcan
 </div>

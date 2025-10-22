@@ -56,9 +56,22 @@
 
                 <!-- Footer -->
                 <div class="px-8 py-4 bg-gradient-to-r from-slate-50 to-blue-50 border-t border-gray-100">
-                    <p class="text-center text-xs text-gray-600">
-                        &copy; {{ date('Y') }} Ponto Digital. Todos os direitos reservados.
-                    </p>
+                    <div class="text-center space-y-1">
+                        <p class="text-xs font-semibold text-gray-700">
+                            Sistema Next Ponto
+                        </p>
+                        <p class="text-xs text-gray-600">
+                            Desenvolvido por: <span class="font-medium">Godinho Sistemas Ltda.</span>
+                        </p>
+                        <p class="text-xs text-gray-500">
+                            <a href="https://www.nextsystems.com.br" target="_blank" class="hover:text-blue-600 transition-colors">
+                                www.nextsystems.com.br
+                            </a>
+                        </p>
+                        <p class="text-xs text-gray-500 pt-1">
+                            &copy; {{ date('Y') }} - Todos os direitos reservados.
+                        </p>
+                    </div>
                 </div>
             </div>
 

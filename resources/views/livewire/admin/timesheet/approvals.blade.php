@@ -18,6 +18,15 @@ new class extends Component {
     public $showDetailsModal = false;
     public $selectedEntry;
 
+    // Modal de ajuste
+    public $showAdjustModal = false;
+    public $entryToAdjust;
+    public $adj_clock_in = '';
+    public $adj_clock_out = '';
+    public $adj_lunch_start = '';
+    public $adj_lunch_end = '';
+    public $adjustment_reason = '';
+
     protected $queryString = ['search', 'status_filter'];
 
     public function mount()
@@ -38,7 +47,7 @@ new class extends Component {
 
     public function viewDetails($entryId)
     {
-        $this->selectedEntry = TimeEntry::with(['employee', 'approvedBy'])->find($entryId);
+        $this->selectedEntry = TimeEntry::with(['employee', 'approver'])->find($entryId);
         $this->showDetailsModal = true;
     }
 
@@ -94,6 +103,85 @@ new class extends Component {
         } catch (\Exception $e) {
             session()->flash('error', 'Erro ao rejeitar registro: ' . $e->getMessage());
         }
+    }
+
+    public function openAdjustModal($entryId)
+    {
+        $this->entryToAdjust = TimeEntry::findOrFail($entryId);
+
+        // Preenche com os valores atuais
+        $this->adj_clock_in = $this->entryToAdjust->clock_in ?? '';
+        $this->adj_clock_out = $this->entryToAdjust->clock_out ?? '';
+        $this->adj_lunch_start = $this->entryToAdjust->lunch_start ?? '';
+        $this->adj_lunch_end = $this->entryToAdjust->lunch_end ?? '';
+        $this->adjustment_reason = '';
+
+        $this->showAdjustModal = true;
+    }
+
+    public function saveAdjustment()
+    {
+        $this->validate([
+            'adjustment_reason' => 'required|string|min:10|max:500',
+            'adj_clock_in' => 'nullable|date_format:H:i',
+            'adj_clock_out' => 'nullable|date_format:H:i',
+            'adj_lunch_start' => 'nullable|date_format:H:i',
+            'adj_lunch_end' => 'nullable|date_format:H:i',
+        ], [
+            'adjustment_reason.required' => 'A justificativa é obrigatória.',
+            'adjustment_reason.min' => 'A justificativa deve ter no mínimo 10 caracteres.',
+            'adj_clock_in.date_format' => 'Formato de horário inválido para entrada.',
+            'adj_clock_out.date_format' => 'Formato de horário inválido para saída.',
+        ]);
+
+        try {
+            $entry = $this->entryToAdjust;
+
+            // Salva os valores originais se ainda não foram salvos
+            if (!$entry->has_adjustment) {
+                $entry->original_clock_in = $entry->clock_in;
+                $entry->original_clock_out = $entry->clock_out;
+                $entry->original_lunch_start = $entry->lunch_start;
+                $entry->original_lunch_end = $entry->lunch_end;
+            }
+
+            // Atualiza com valores ajustados
+            $entry->clock_in = $this->adj_clock_in ?: null;
+            $entry->clock_out = $this->adj_clock_out ?: null;
+            $entry->lunch_start = $this->adj_lunch_start ?: null;
+            $entry->lunch_end = $this->adj_lunch_end ?: null;
+
+            $entry->adjusted_clock_in = $this->adj_clock_in ?: null;
+            $entry->adjusted_clock_out = $this->adj_clock_out ?: null;
+            $entry->adjusted_lunch_start = $this->adj_lunch_start ?: null;
+            $entry->adjusted_lunch_end = $this->adj_lunch_end ?: null;
+
+            $entry->has_adjustment = true;
+            $entry->adjustment_reason = $this->adjustment_reason;
+            $entry->adjusted_by = auth()->id();
+            $entry->adjusted_at = now();
+
+            // Recalcula total de horas
+            $entry->calculateTotalHours();
+            $entry->save();
+
+            session()->flash('success', 'Ajuste realizado com sucesso!');
+            $this->closeAdjustModal();
+        } catch (\Exception $e) {
+            session()->flash('error', 'Erro ao salvar ajuste: ' . $e->getMessage());
+        }
+    }
+
+    public function closeAdjustModal()
+    {
+        $this->showAdjustModal = false;
+        $this->entryToAdjust = null;
+        $this->adj_clock_in = '';
+        $this->adj_clock_out = '';
+        $this->adj_lunch_start = '';
+        $this->adj_lunch_end = '';
+        $this->adjustment_reason = '';
+        $this->resetErrorBag();
     }
 
     public function bulkApprove()
@@ -289,14 +377,14 @@ new class extends Component {
                             <div class="text-xs text-gray-500">{{ \Carbon\Carbon::parse($entry->date)->locale('pt_BR')->isoFormat('dddd') }}</div>
                         </td>
                         <td class="px-6 py-4">
-                            <span class="font-semibold text-green-600">{{ $entry->clock_in ?? '--:--' }}</span>
+                            <span class="font-semibold text-green-600">{{ $entry->formatted_clock_in ?? '--:--' }}</span>
                         </td>
                         <td class="px-6 py-4">
-                            <span class="font-semibold text-red-600">{{ $entry->clock_out ?? '--:--' }}</span>
+                            <span class="font-semibold text-red-600">{{ $entry->formatted_clock_out ?? '--:--' }}</span>
                         </td>
                         <td class="px-6 py-4">
                             @if($entry->total_hours)
-                            <span class="font-bold text-blue-600">{{ number_format($entry->total_hours, 2) }}h</span>
+                            <span class="font-bold text-blue-600">{{ $entry->formatted_total_hours }}</span>
                             @else
                             <span class="text-gray-400">-</span>
                             @endif
@@ -312,20 +400,29 @@ new class extends Component {
                             </span>
                         </td>
                         <td class="px-6 py-4">
-                            <div class="flex items-center gap-2">
+                            <div class="flex items-center gap-2 flex-wrap">
                                 <button wire:click="viewDetails({{ $entry->id }})"
-                                    class="text-blue-600 hover:text-blue-800 font-medium">
+                                    class="text-blue-600 hover:text-blue-800 font-medium text-sm">
                                     Detalhes
                                 </button>
                                 @if($entry->status === 'pending')
+                                <button wire:click="openAdjustModal({{ $entry->id }})"
+                                    class="text-purple-600 hover:text-purple-800 font-medium text-sm">
+                                    Ajustar
+                                </button>
                                 <button wire:click="approve({{ $entry->id }})"
-                                    class="text-green-600 hover:text-green-800 font-medium">
+                                    class="text-green-600 hover:text-green-800 font-medium text-sm">
                                     Aprovar
                                 </button>
                                 <button wire:click="reject({{ $entry->id }})"
-                                    class="text-red-600 hover:text-red-800 font-medium">
+                                    class="text-red-600 hover:text-red-800 font-medium text-sm">
                                     Rejeitar
                                 </button>
+                                @endif
+                                @if($entry->has_adjustment)
+                                <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-purple-100 text-purple-800" title="Registro ajustado">
+                                    Ajustado
+                                </span>
                                 @endif
                             </div>
                         </td>
@@ -376,29 +473,29 @@ new class extends Component {
                         <div class="grid grid-cols-2 gap-4">
                             <div>
                                 <p class="text-sm text-gray-600">Entrada</p>
-                                <p class="text-lg font-bold text-green-600">{{ $selectedEntry->clock_in ?? '--:--' }}</p>
+                                <p class="text-lg font-bold text-green-600">{{ $selectedEntry->formatted_clock_in ?? '--:--' }}</p>
                             </div>
                             <div>
                                 <p class="text-sm text-gray-600">Saída</p>
-                                <p class="text-lg font-bold text-red-600">{{ $selectedEntry->clock_out ?? '--:--' }}</p>
+                                <p class="text-lg font-bold text-red-600">{{ $selectedEntry->formatted_clock_out ?? '--:--' }}</p>
                             </div>
                         </div>
 
                         <div class="grid grid-cols-2 gap-4">
                             <div>
                                 <p class="text-sm text-gray-600">Início Almoço</p>
-                                <p class="font-semibold">{{ $selectedEntry->lunch_start ?? '--:--' }}</p>
+                                <p class="font-semibold">{{ $selectedEntry->formatted_lunch_start ?? '--:--' }}</p>
                             </div>
                             <div>
                                 <p class="text-sm text-gray-600">Fim Almoço</p>
-                                <p class="font-semibold">{{ $selectedEntry->lunch_end ?? '--:--' }}</p>
+                                <p class="font-semibold">{{ $selectedEntry->formatted_lunch_end ?? '--:--' }}</p>
                             </div>
                         </div>
 
                         @if($selectedEntry->total_hours)
                         <div class="bg-blue-50 rounded-lg p-4">
                             <p class="text-sm text-gray-600">Total Trabalhado</p>
-                            <p class="text-2xl font-bold text-blue-600">{{ number_format($selectedEntry->total_hours, 2) }}h</p>
+                            <p class="text-2xl font-bold text-blue-600">{{ $selectedEntry->formatted_total_hours }}</p>
                         </div>
                         @endif
 
@@ -409,17 +506,56 @@ new class extends Component {
                         </div>
                         @endif
 
-                        @if($selectedEntry->ip_address)
-                        <div>
-                            <p class="text-sm text-gray-600">IP de Registro</p>
-                            <p class="text-gray-900 font-mono text-sm">{{ $selectedEntry->ip_address }}</p>
+                        <div class="grid grid-cols-1 gap-4">
+                            @if($selectedEntry->ip_address)
+                            <div>
+                                <p class="text-sm text-gray-600">IP de Registro</p>
+                                <p class="text-gray-900 font-mono text-sm">{{ $selectedEntry->ip_address }}</p>
+                            </div>
+                            @endif
+
+                            @if($selectedEntry->gps_latitude && $selectedEntry->gps_longitude)
+                            <div class="bg-blue-50 rounded-lg p-4 border border-blue-200">
+                                <p class="text-sm font-semibold text-blue-800 mb-2">📍 Localização GPS</p>
+                                <div class="grid grid-cols-2 gap-2 text-sm">
+                                    <div>
+                                        <p class="text-gray-600">Latitude:</p>
+                                        <p class="font-mono text-blue-900">{{ number_format($selectedEntry->gps_latitude, 6) }}</p>
+                                    </div>
+                                    <div>
+                                        <p class="text-gray-600">Longitude:</p>
+                                        <p class="font-mono text-blue-900">{{ number_format($selectedEntry->gps_longitude, 6) }}</p>
+                                    </div>
+                                </div>
+                                @if($selectedEntry->gps_accuracy)
+                                <p class="text-xs text-gray-600 mt-2">Precisão: {{ number_format($selectedEntry->gps_accuracy, 2) }}m</p>
+                                @endif
+                                @if($selectedEntry->distance_meters !== null)
+                                <div class="mt-2 pt-2 border-t border-blue-200">
+                                    <p class="text-xs text-gray-600">Distância do perímetro:</p>
+                                    <p class="text-sm font-semibold {{ $selectedEntry->gps_validated ? 'text-green-700' : 'text-red-700' }}">
+                                        {{ number_format($selectedEntry->distance_meters, 2) }}m
+                                        @if($selectedEntry->gps_validated)
+                                            <span class="text-green-600">✓ Dentro do perímetro</span>
+                                        @else
+                                            <span class="text-red-600">✗ Fora do perímetro</span>
+                                        @endif
+                                    </p>
+                                </div>
+                                @endif
+                                <a href="https://www.google.com/maps?q={{ $selectedEntry->gps_latitude }},{{ $selectedEntry->gps_longitude }}"
+                                   target="_blank"
+                                   class="inline-block mt-2 text-blue-600 hover:text-blue-800 text-sm font-medium">
+                                    Ver no Google Maps →
+                                </a>
+                            </div>
+                            @endif
                         </div>
-                        @endif
 
                         @if($selectedEntry->approved_by)
                         <div class="bg-gray-50 rounded-lg p-4">
                             <p class="text-sm text-gray-600">Aprovado por</p>
-                            <p class="font-semibold">{{ $selectedEntry->approvedBy->name ?? 'N/A' }}</p>
+                            <p class="font-semibold">{{ $selectedEntry->approver->name ?? 'N/A' }}</p>
                             <p class="text-xs text-gray-500">{{ $selectedEntry->approved_at ? \Carbon\Carbon::parse($selectedEntry->approved_at)->format('d/m/Y H:i') : '' }}</p>
                         </div>
                         @endif
@@ -442,6 +578,141 @@ new class extends Component {
                         Fechar
                     </button>
                 </div>
+            </div>
+        </div>
+    </div>
+    @endif
+
+    <!-- Modal de Ajuste -->
+    @if($showAdjustModal && $entryToAdjust)
+    <div class="fixed inset-0 z-50 overflow-y-auto" aria-labelledby="modal-title" role="dialog" aria-modal="true">
+        <div class="flex items-end justify-center min-h-screen pt-4 px-4 pb-20 text-center sm:block sm:p-0">
+            <div class="fixed inset-0 bg-gray-500 bg-opacity-75 transition-opacity" wire:click="closeAdjustModal"></div>
+
+            <div class="inline-block align-bottom bg-white rounded-lg text-left overflow-hidden shadow-xl transform transition-all sm:my-8 sm:align-middle sm:max-w-2xl sm:w-full">
+                <form wire:submit="saveAdjustment">
+                    <div class="bg-gradient-to-r from-purple-600 to-indigo-600 px-6 py-4">
+                        <h3 class="text-lg font-bold text-white flex items-center gap-2">
+                            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"></path>
+                            </svg>
+                            Ajustar Registro de Ponto
+                        </h3>
+                        <p class="text-purple-100 text-sm mt-1">{{ $entryToAdjust->employee->name }} - {{ \Carbon\Carbon::parse($entryToAdjust->date)->format('d/m/Y') }}</p>
+                    </div>
+
+                    <div class="bg-white px-6 py-4 space-y-6">
+                        <!-- Valores Originais -->
+                        <div class="bg-gray-50 rounded-lg p-4 border border-gray-200">
+                            <p class="text-sm font-semibold text-gray-700 mb-3 flex items-center gap-2">
+                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                                </svg>
+                                Horários Registrados:
+                            </p>
+                            <div class="grid grid-cols-4 gap-3 text-sm">
+                                <div>
+                                    <p class="text-gray-600 text-xs">Entrada</p>
+                                    <p class="font-bold text-green-600">{{ $entryToAdjust->clock_in ?? '--:--' }}</p>
+                                </div>
+                                <div>
+                                    <p class="text-gray-600 text-xs">Saída Almoço</p>
+                                    <p class="font-semibold text-gray-700">{{ $entryToAdjust->lunch_start ?? '--:--' }}</p>
+                                </div>
+                                <div>
+                                    <p class="text-gray-600 text-xs">Volta Almoço</p>
+                                    <p class="font-semibold text-gray-700">{{ $entryToAdjust->lunch_end ?? '--:--' }}</p>
+                                </div>
+                                <div>
+                                    <p class="text-gray-600 text-xs">Saída</p>
+                                    <p class="font-bold text-red-600">{{ $entryToAdjust->clock_out ?? '--:--' }}</p>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Campos de Ajuste -->
+                        <div class="bg-purple-50 rounded-lg p-4 border border-purple-200">
+                            <p class="text-sm font-semibold text-purple-900 mb-3 flex items-center gap-2">
+                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"></path>
+                                </svg>
+                                Ajustar Para:
+                            </p>
+                            <div class="grid grid-cols-2 gap-4">
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-700 mb-1">Entrada</label>
+                                    <input wire:model="adj_clock_in" type="time"
+                                        class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent">
+                                    @error('adj_clock_in') <span class="text-red-600 text-xs mt-1">{{ $message }}</span> @enderror
+                                </div>
+
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-700 mb-1">Saída</label>
+                                    <input wire:model="adj_clock_out" type="time"
+                                        class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent">
+                                    @error('adj_clock_out') <span class="text-red-600 text-xs mt-1">{{ $message }}</span> @enderror
+                                </div>
+
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-700 mb-1">Início Almoço</label>
+                                    <input wire:model="adj_lunch_start" type="time"
+                                        class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent">
+                                    @error('adj_lunch_start') <span class="text-red-600 text-xs mt-1">{{ $message }}</span> @enderror
+                                </div>
+
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-700 mb-1">Fim Almoço</label>
+                                    <input wire:model="adj_lunch_end" type="time"
+                                        class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent">
+                                    @error('adj_lunch_end') <span class="text-red-600 text-xs mt-1">{{ $message }}</span> @enderror
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Justificativa -->
+                        <div class="bg-yellow-50 rounded-lg p-4 border border-yellow-200">
+                            <label class="block text-sm font-semibold text-gray-900 mb-2 flex items-center gap-2">
+                                <svg class="w-5 h-5 text-yellow-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path>
+                                </svg>
+                                Justificativa do Ajuste *
+                            </label>
+                            <textarea wire:model="adjustment_reason" rows="3" required
+                                placeholder="Explique o motivo do ajuste (mínimo 10 caracteres)..."
+                                class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent resize-none"></textarea>
+                            @error('adjustment_reason') <span class="text-red-600 text-xs mt-1 block">{{ $message }}</span> @enderror
+                            <p class="text-xs text-gray-600 mt-1">Esta justificativa será registrada e exibida nos relatórios.</p>
+                        </div>
+
+                        <!-- Alerta -->
+                        <div class="bg-blue-50 border-l-4 border-blue-400 p-4">
+                            <div class="flex">
+                                <div class="flex-shrink-0">
+                                    <svg class="h-5 w-5 text-blue-400" fill="currentColor" viewBox="0 0 20 20">
+                                        <path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clip-rule="evenodd"></path>
+                                    </svg>
+                                </div>
+                                <div class="ml-3">
+                                    <p class="text-sm text-blue-700">
+                                        <strong>Atenção:</strong> O ajuste será registrado no sistema e as horas totais serão recalculadas automaticamente.
+                                        Os valores originais serão preservados para auditoria.
+                                    </p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="bg-gray-50 px-6 py-4 flex flex-row-reverse gap-3">
+                        <button type="submit"
+                            class="inline-flex justify-center rounded-lg border border-transparent shadow-sm px-6 py-2.5 bg-gradient-to-r from-purple-600 to-indigo-600 text-base font-medium text-white hover:from-purple-700 hover:to-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-purple-500 sm:text-sm">
+                            💾 Salvar Ajuste
+                        </button>
+                        <button type="button" wire:click="closeAdjustModal"
+                            class="inline-flex justify-center rounded-lg border border-gray-300 shadow-sm px-6 py-2.5 bg-white text-base font-medium text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-500 sm:text-sm">
+                            Cancelar
+                        </button>
+                    </div>
+                </form>
             </div>
         </div>
     </div>

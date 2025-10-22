@@ -23,17 +23,32 @@ class TimeEntry extends Model
         'notes',
         'ip_address',
         'location',
+        'gps_latitude',
+        'gps_longitude',
+        'gps_accuracy',
+        'distance_meters',
+        'gps_validated',
         'approved_by',
         'approved_at',
+        'has_adjustment',
+        'original_clock_in',
+        'original_clock_out',
+        'original_lunch_start',
+        'original_lunch_end',
+        'adjusted_clock_in',
+        'adjusted_clock_out',
+        'adjusted_lunch_start',
+        'adjusted_lunch_end',
+        'adjustment_reason',
+        'adjusted_by',
+        'adjusted_at',
     ];
 
     protected $casts = [
         'date' => 'date',
-        'clock_in' => 'datetime:H:i',
-        'clock_out' => 'datetime:H:i',
-        'lunch_start' => 'datetime:H:i',
-        'lunch_end' => 'datetime:H:i',
         'approved_at' => 'datetime',
+        'adjusted_at' => 'datetime',
+        'has_adjustment' => 'boolean',
     ];
 
     /**
@@ -61,6 +76,14 @@ class TimeEntry extends Model
     }
 
     /**
+     * Relacionamento com o usuário que ajustou
+     */
+    public function adjuster(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'adjusted_by');
+    }
+
+    /**
      * Calcula o total de horas trabalhadas
      */
     public function calculateTotalHours(): void
@@ -69,22 +92,36 @@ class TimeEntry extends Model
             return;
         }
 
-        $clockIn = Carbon::parse($this->clock_in);
-        $clockOut = Carbon::parse($this->clock_out);
+        // Usa a data do registro para criar timestamps completos
+        $date = $this->date instanceof Carbon ? $this->date : Carbon::parse($this->date);
 
-        // Calcula o total de minutos
-        $totalMinutes = $clockOut->diffInMinutes($clockIn);
+        $clockIn = Carbon::parse($date->format('Y-m-d') . ' ' . $this->clock_in);
+        $clockOut = Carbon::parse($date->format('Y-m-d') . ' ' . $this->clock_out);
+
+        // Se clock_out for menor que clock_in, assume que passou da meia-noite
+        if ($clockOut->lessThan($clockIn)) {
+            $clockOut->addDay();
+        }
+
+        // Calcula o total de minutos (com sinal positivo garantido)
+        $totalMinutes = $clockIn->diffInMinutes($clockOut, false);
 
         // Subtrai o tempo de almoço se houver
         if ($this->lunch_start && $this->lunch_end) {
-            $lunchStart = Carbon::parse($this->lunch_start);
-            $lunchEnd = Carbon::parse($this->lunch_end);
-            $lunchMinutes = $lunchEnd->diffInMinutes($lunchStart);
+            $lunchStart = Carbon::parse($date->format('Y-m-d') . ' ' . $this->lunch_start);
+            $lunchEnd = Carbon::parse($date->format('Y-m-d') . ' ' . $this->lunch_end);
+
+            // Se lunch_end for menor que lunch_start, assume que passou da meia-noite
+            if ($lunchEnd->lessThan($lunchStart)) {
+                $lunchEnd->addDay();
+            }
+
+            $lunchMinutes = $lunchStart->diffInMinutes($lunchEnd, false);
             $totalMinutes -= $lunchMinutes;
         }
 
-        $this->total_minutes = $totalMinutes;
-        $this->total_hours = floor($totalMinutes / 60);
+        $this->total_minutes = max(0, $totalMinutes); // Garante que não seja negativo
+        $this->total_hours = round($totalMinutes / 60, 2); // Arredonda para 2 decimais
     }
 
     /**
@@ -150,7 +187,78 @@ class TimeEntry extends Model
     }
 
     /**
-     * Formata as horas trabalhadas
+     * Formata hora para exibição (HH:MM)
+     */
+    public function formatTime($field): ?string
+    {
+        $time = $this->attributes[$field] ?? null;
+
+        if (!$time) {
+            return null;
+        }
+
+        // Se já é uma string no formato HH:MM ou HH:MM:SS
+        if (is_string($time)) {
+            return substr($time, 0, 5);
+        }
+
+        // Se é um objeto Carbon/DateTime
+        if ($time instanceof \DateTimeInterface) {
+            return $time->format('H:i');
+        }
+
+        return $time;
+    }
+
+    /**
+     * Retorna clock_in formatado
+     */
+    public function getFormattedClockInAttribute(): ?string
+    {
+        return $this->formatTime('clock_in');
+    }
+
+    /**
+     * Retorna clock_out formatado
+     */
+    public function getFormattedClockOutAttribute(): ?string
+    {
+        return $this->formatTime('clock_out');
+    }
+
+    /**
+     * Retorna lunch_start formatado
+     */
+    public function getFormattedLunchStartAttribute(): ?string
+    {
+        return $this->formatTime('lunch_start');
+    }
+
+    /**
+     * Retorna lunch_end formatado
+     */
+    public function getFormattedLunchEndAttribute(): ?string
+    {
+        return $this->formatTime('lunch_end');
+    }
+
+    /**
+     * Formata o total de horas em HH:MM
+     */
+    public function getFormattedTotalHoursAttribute(): string
+    {
+        if (!$this->total_hours || $this->total_hours <= 0) {
+            return '00:00';
+        }
+
+        $hours = floor($this->total_hours);
+        $minutes = round(($this->total_hours - $hours) * 60);
+
+        return sprintf('%02d:%02d', $hours, $minutes);
+    }
+
+    /**
+     * Formata as horas trabalhadas (versão legível)
      */
     public function getFormattedHoursAttribute(): string
     {

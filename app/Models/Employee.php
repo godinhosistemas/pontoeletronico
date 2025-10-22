@@ -26,13 +26,19 @@ class Employee extends Model
         'salary',
         'photo',
         'face_photo',
+        'face_descriptor',
         'address',
         'city',
         'state',
         'zip_code',
         'status',
         'work_schedule',
+        'work_schedule_id',
         'is_active',
+        'allowed_latitude',
+        'allowed_longitude',
+        'geofence_radius',
+        'require_geolocation',
     ];
 
     protected $casts = [
@@ -50,6 +56,14 @@ class Employee extends Model
     public function tenant(): BelongsTo
     {
         return $this->belongsTo(Tenant::class);
+    }
+
+    /**
+     * Relacionamento com WorkSchedule (Jornada de Trabalho)
+     */
+    public function workSchedule(): BelongsTo
+    {
+        return $this->belongsTo(WorkSchedule::class, 'work_schedule_id');
     }
 
     /**

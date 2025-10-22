@@ -24,12 +24,40 @@ new class extends Component {
 
     public function exportPdf()
     {
-        session()->flash('info', 'Função de exportação PDF será implementada em breve.');
+        // Redireciona para rota de download do PDF
+        return redirect()->route('admin.reports.export.pdf', [
+            'employee_id' => $this->employee_id,
+            'date_from' => $this->date_from,
+            'date_to' => $this->date_to,
+            'report_type' => $this->report_type,
+        ]);
     }
 
     public function exportExcel()
     {
-        session()->flash('info', 'Função de exportação Excel será implementada em breve.');
+        // Redireciona para rota de download do Excel (CSV)
+        return redirect()->route('admin.reports.export.excel', [
+            'employee_id' => $this->employee_id,
+            'date_from' => $this->date_from,
+            'date_to' => $this->date_to,
+            'report_type' => $this->report_type,
+        ]);
+    }
+
+    public function exportMirror()
+    {
+        // Validação
+        if (!$this->employee_id) {
+            session()->flash('error', 'Selecione um funcionário para gerar a folha espelho.');
+            return;
+        }
+
+        // Redireciona para rota de download da Folha Espelho
+        return redirect()->route('admin.reports.export.mirror', [
+            'employee_id' => $this->employee_id,
+            'date_from' => $this->date_from,
+            'date_to' => $this->date_to,
+        ]);
     }
 
     public function with()
@@ -143,7 +171,14 @@ new class extends Component {
             </div>
         </div>
 
-        <div class="flex gap-3">
+        <div class="flex gap-3 flex-wrap">
+            <button wire:click="exportMirror"
+                class="px-4 py-2 bg-gradient-to-r from-blue-500 to-blue-600 text-white rounded-lg hover:from-blue-600 hover:to-blue-700 font-semibold shadow-lg flex items-center gap-2">
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path>
+                </svg>
+                Folha Espelho
+            </button>
             <button wire:click="exportPdf"
                 class="px-4 py-2 bg-gradient-to-r from-red-500 to-red-600 text-white rounded-lg hover:from-red-600 hover:to-red-700 font-semibold shadow-lg flex items-center gap-2">
                 <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -181,7 +216,13 @@ new class extends Component {
             <div class="flex items-center justify-between">
                 <div>
                     <p class="text-sm text-green-600 font-medium">Total de Horas</p>
-                    <p class="text-3xl font-bold text-green-700">{{ number_format($summary['total_hours'], 2) }}h</p>
+                    <p class="text-3xl font-bold text-green-700">
+                        @php
+                            $h = floor($summary['total_hours']);
+                            $m = round(($summary['total_hours'] - $h) * 60);
+                        @endphp
+                        {{ sprintf('%d:%02d', $h, $m) }}
+                    </p>
                 </div>
                 <div class="w-12 h-12 bg-green-200 rounded-full flex items-center justify-center">
                     <svg class="w-6 h-6 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -195,7 +236,13 @@ new class extends Component {
             <div class="flex items-center justify-between">
                 <div>
                     <p class="text-sm text-purple-600 font-medium">Média por Dia</p>
-                    <p class="text-3xl font-bold text-purple-700">{{ number_format($summary['avg_hours'], 2) }}h</p>
+                    <p class="text-3xl font-bold text-purple-700">
+                        @php
+                            $h = floor($summary['avg_hours']);
+                            $m = round(($summary['avg_hours'] - $h) * 60);
+                        @endphp
+                        {{ sprintf('%d:%02d', $h, $m) }}
+                    </p>
                 </div>
                 <div class="w-12 h-12 bg-purple-200 rounded-full flex items-center justify-center">
                     <svg class="w-6 h-6 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -254,21 +301,21 @@ new class extends Component {
                             <div class="text-xs text-gray-500">{{ $entry->employee->registration_number }}</div>
                         </td>
                         <td class="px-6 py-4">
-                            <span class="font-semibold text-green-600">{{ $entry->clock_in ?? '--:--' }}</span>
+                            <span class="font-semibold text-green-600">{{ $entry->formatted_clock_in ?? '--:--' }}</span>
                         </td>
                         <td class="px-6 py-4">
-                            <span class="font-semibold text-red-600">{{ $entry->clock_out ?? '--:--' }}</span>
+                            <span class="font-semibold text-red-600">{{ $entry->formatted_clock_out ?? '--:--' }}</span>
                         </td>
                         <td class="px-6 py-4">
-                            @if($entry->lunch_start && $entry->lunch_end)
-                            <span class="text-xs">{{ $entry->lunch_start }} - {{ $entry->lunch_end }}</span>
+                            @if($entry->formatted_lunch_start && $entry->formatted_lunch_end)
+                            <span class="text-xs">{{ $entry->formatted_lunch_start }} - {{ $entry->formatted_lunch_end }}</span>
                             @else
                             <span class="text-gray-400">-</span>
                             @endif
                         </td>
                         <td class="px-6 py-4">
                             @if($entry->total_hours)
-                            <span class="font-bold text-blue-600">{{ number_format($entry->total_hours, 2) }}h</span>
+                            <span class="font-bold text-blue-600">{{ $entry->formatted_total_hours }}</span>
                             @else
                             <span class="text-gray-400">-</span>
                             @endif
@@ -322,11 +369,23 @@ new class extends Component {
                 <div class="grid grid-cols-3 gap-4 mb-4">
                     <div class="bg-gray-50 rounded-lg p-4 text-center">
                         <p class="text-sm text-gray-600">Total de Horas</p>
-                        <p class="text-2xl font-bold text-green-600">{{ number_format($data['total_hours'], 2) }}h</p>
+                        <p class="text-2xl font-bold text-green-600">
+                            @php
+                                $h = floor($data['total_hours']);
+                                $m = round(($data['total_hours'] - $h) * 60);
+                            @endphp
+                            {{ sprintf('%d:%02d', $h, $m) }}
+                        </p>
                     </div>
                     <div class="bg-gray-50 rounded-lg p-4 text-center">
                         <p class="text-sm text-gray-600">Média por Dia</p>
-                        <p class="text-2xl font-bold text-purple-600">{{ number_format($data['avg_hours'], 2) }}h</p>
+                        <p class="text-2xl font-bold text-purple-600">
+                            @php
+                                $h = floor($data['avg_hours']);
+                                $m = round(($data['avg_hours'] - $h) * 60);
+                            @endphp
+                            {{ sprintf('%d:%02d', $h, $m) }}
+                        </p>
                     </div>
                     <div class="bg-gray-50 rounded-lg p-4 text-center">
                         <p class="text-sm text-gray-600">Dias Trabalhados</p>
@@ -341,11 +400,11 @@ new class extends Component {
                         <div class="flex justify-between items-center py-2 px-3 bg-gray-50 rounded-lg hover:bg-gray-100">
                             <div class="flex items-center gap-4">
                                 <span class="font-medium text-gray-900">{{ \Carbon\Carbon::parse($entry->date)->format('d/m/Y') }}</span>
-                                <span class="text-sm text-green-600">{{ $entry->clock_in }}</span>
+                                <span class="text-sm text-green-600">{{ $entry->formatted_clock_in }}</span>
                                 <span class="text-gray-400">→</span>
-                                <span class="text-sm text-red-600">{{ $entry->clock_out ?? '--:--' }}</span>
+                                <span class="text-sm text-red-600">{{ $entry->formatted_clock_out ?? '--:--' }}</span>
                             </div>
-                            <span class="font-bold text-blue-600">{{ number_format($entry->total_hours ?? 0, 2) }}h</span>
+                            <span class="font-bold text-blue-600">{{ $entry->formatted_total_hours ?? '00:00' }}</span>
                         </div>
                         @endforeach
                     </div>

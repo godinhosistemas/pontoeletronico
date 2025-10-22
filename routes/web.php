@@ -48,6 +48,11 @@ Route::middleware(['auth', 'tenant.active'])->prefix('admin')->name('admin.')->g
         return view('admin.employees.index');
     })->name('employees.index')->middleware(['can:employees.view', 'log.auth']);
 
+    // Work Schedules - Jornadas de Trabalho
+    Route::get('/work-schedules', function () {
+        return view('admin.work-schedules.index');
+    })->name('work-schedules.index');
+
     // Time Entries - Aprovação de pontos (apenas gestores)
     Route::get('/timesheet/approvals', function () {
         return view('admin.timesheet.approvals');
@@ -57,6 +62,14 @@ Route::middleware(['auth', 'tenant.active'])->prefix('admin')->name('admin.')->g
     Route::get('/timesheet/reports', function () {
         return view('admin.timesheet.reports');
     })->name('timesheet.reports')->middleware('can:reports.view');
+
+    // Exportações de Relatórios
+    Route::get('/timesheet/reports/export/pdf', [App\Http\Controllers\Admin\TimesheetReportController::class, 'exportPdf'])
+        ->name('reports.export.pdf')->middleware('can:reports.export');
+    Route::get('/timesheet/reports/export/excel', [App\Http\Controllers\Admin\TimesheetReportController::class, 'exportExcel'])
+        ->name('reports.export.excel')->middleware('can:reports.export');
+    Route::get('/timesheet/reports/export/mirror', [App\Http\Controllers\Admin\TimesheetReportController::class, 'exportTimesheetMirror'])
+        ->name('reports.export.mirror')->middleware('can:reports.export');
 });
 
 // Rotas para funcionários (registro de ponto)
@@ -78,7 +91,19 @@ Route::prefix('api/pwa')->name('api.pwa.')->group(function () {
     Route::get('/today-entry/{employeeId}', [App\Http\Controllers\Api\PwaClockController::class, 'getTodayEntry'])->name('today-entry');
     Route::post('/register-clock', [App\Http\Controllers\Api\PwaClockController::class, 'registerClock'])->name('register-clock');
     Route::post('/sync', [App\Http\Controllers\Api\PwaClockController::class, 'syncClockEntries'])->name('sync');
+
+    // Rotas de reconhecimento facial
+    Route::post('/save-face-descriptor', [App\Http\Controllers\Api\PwaClockController::class, 'saveFaceDescriptor'])->name('save-face-descriptor');
+    Route::post('/validate-face', [App\Http\Controllers\Api\PwaClockController::class, 'validateFaceRecognition'])->name('validate-face');
+
+    // Rota de validação de geolocalização
+    Route::post('/validate-geolocation', [App\Http\Controllers\Api\PwaClockController::class, 'validateGeolocation'])->name('validate-geolocation');
 });
+
+// Rota administrativa para configurar geofence (protegida com autenticação)
+Route::post('/api/admin/employees/{id}/set-geofence', [App\Http\Controllers\Api\PwaClockController::class, 'setGeofence'])
+    ->middleware(['auth'])
+    ->name('admin.employees.set-geofence');
 
 // Rota de logout (POST)
 Route::post('/logout', function () {

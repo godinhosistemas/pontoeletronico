@@ -97,6 +97,15 @@
                         @endcan
 
                         <li>
+                            <a href="{{ route('admin.work-schedules.index') }}" class="flex items-center p-3 text-gray-300 rounded-lg hover:bg-slate-700 hover:text-white transition-all duration-200 group {{ request()->routeIs('admin.work-schedules.*') ? 'bg-gradient-to-r from-blue-600 to-indigo-600 text-white shadow-lg' : '' }}">
+                                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"></path>
+                                </svg>
+                                <span class="ml-3">Jornadas</span>
+                            </a>
+                        </li>
+
+                        <li>
                             <div class="px-3 py-2 text-xs font-semibold text-gray-500 uppercase tracking-wider mt-4">
                                 Ponto Eletrônico
                             </div>
@@ -223,6 +232,22 @@
                                 });
                             });
                         </script>
+
+                        <!-- Copyright -->
+                        <div class="mt-3 pt-3 border-t border-slate-700 text-center">
+                            <p class="text-xs font-semibold text-gray-300 mb-1">
+                                Sistema Next Ponto
+                            </p>
+                            <p class="text-xs text-gray-400 mb-1">
+                                Godinho Sistemas Ltda.
+                            </p>
+                            <a href="https://www.nextsystems.com.br" target="_blank" class="text-xs text-blue-400 hover:text-blue-300 transition-colors">
+                                www.nextsystems.com.br
+                            </a>
+                            <p class="text-xs text-gray-500 mt-2">
+                                &copy; {{ date('Y') }}
+                            </p>
+                        </div>
                     </div>
                 </div>
             </aside>

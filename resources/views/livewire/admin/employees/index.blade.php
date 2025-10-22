@@ -4,6 +4,7 @@ use Livewire\Volt\Component;
 use Livewire\WithPagination;
 use App\Models\Employee;
 use App\Models\Tenant;
+use App\Models\WorkSchedule;
 use Illuminate\Support\Str;
 
 new class extends Component {
@@ -15,6 +16,11 @@ new class extends Component {
     public $showModal = false;
     public $modalAction = 'create';
     public $employeeId = null;
+
+    // Modal de código único
+    public $showCodeModal = false;
+    public $generatedCode = '';
+    public $generatedEmployeeName = '';
 
     // Campos do formulário
     public $tenant_id = '';
@@ -33,6 +39,7 @@ new class extends Component {
     public $state = '';
     public $zip_code = '';
     public $status = 'active';
+    public $work_schedule_id = '';
 
     public function updatingSearch()
     {
@@ -51,7 +58,7 @@ new class extends Component {
 
     public function with(): array
     {
-        $query = Employee::with('tenant');
+        $query = Employee::with(['tenant', 'workSchedule']);
 
         // Se não for super admin, mostrar apenas funcionários do próprio tenant
         if (!auth()->user()->isSuperAdmin()) {
@@ -78,9 +85,16 @@ new class extends Component {
         $employees = $query->orderBy('created_at', 'desc')->paginate(15);
         $tenants = Tenant::where('is_active', true)->orderBy('name')->get();
 
+        // Carregar jornadas de trabalho do tenant atual
+        $workSchedules = WorkSchedule::where('tenant_id', auth()->user()->tenant_id)
+            ->where('is_active', true)
+            ->orderBy('name')
+            ->get();
+
         return [
             'employees' => $employees,
             'tenants' => $tenants,
+            'workSchedules' => $workSchedules,
         ];
     }
 
@@ -118,6 +132,7 @@ new class extends Component {
         $this->state = $employee->state;
         $this->zip_code = $employee->zip_code;
         $this->status = $employee->status;
+        $this->work_schedule_id = $employee->work_schedule_id;
 
         $this->modalAction = 'edit';
         $this->showModal = true;
@@ -185,6 +200,7 @@ new class extends Component {
                 'zip_code' => $this->zip_code,
                 'status' => $this->status,
                 'is_active' => $this->status === 'active',
+                'work_schedule_id' => $this->work_schedule_id ?: null,
             ];
 
             if ($this->modalAction === 'edit') {
@@ -192,6 +208,9 @@ new class extends Component {
                 $employee->update($data);
                 \Log::info('Funcionário atualizado', ['employee_id' => $employee->id]);
                 session()->flash('success', 'Funcionário atualizado com sucesso!');
+
+                $this->closeModal();
+                $this->dispatch('employee-saved');
             } else {
                 // Gerar código único para PWA (6 dígitos aleatórios)
                 do {
@@ -206,11 +225,14 @@ new class extends Component {
 
                 \Log::info('Funcionário criado', ['employee_id' => $employee->id, 'unique_code' => $uniqueCode]);
 
-                session()->flash('success', 'Funcionário cadastrado com sucesso! Código PWA: ' . $uniqueCode);
-            }
+                // Preparar dados para o modal de código
+                $this->generatedCode = $uniqueCode;
+                $this->generatedEmployeeName = $employee->name;
 
-            $this->closeModal();
-            $this->dispatch('employee-saved');
+                $this->closeModal();
+                $this->showCodeModal = true;
+                $this->dispatch('employee-saved');
+            }
 
         } catch (\Illuminate\Validation\ValidationException $e) {
             \Log::error('Erro de validação', ['errors' => $e->errors()]);
@@ -251,6 +273,27 @@ new class extends Component {
         $this->resetForm();
     }
 
+    public function showEmployeeCode($id)
+    {
+        $employee = Employee::findOrFail($id);
+
+        if (!$employee->unique_code) {
+            session()->flash('error', 'Este funcionário não possui código de acesso cadastrado.');
+            return;
+        }
+
+        $this->generatedCode = $employee->unique_code;
+        $this->generatedEmployeeName = $employee->name;
+        $this->showCodeModal = true;
+    }
+
+    public function closeCodeModal()
+    {
+        $this->showCodeModal = false;
+        $this->generatedCode = '';
+        $this->generatedEmployeeName = '';
+    }
+
     private function resetForm()
     {
         $this->reset([
@@ -270,6 +313,7 @@ new class extends Component {
             'city',
             'state',
             'zip_code',
+            'work_schedule_id',
         ]);
         $this->status = 'active';
         $this->resetErrorBag();
@@ -363,6 +407,7 @@ new class extends Component {
                         <th scope="col" class="px-6 py-4">Matrícula</th>
                         <th scope="col" class="px-6 py-4">Cargo</th>
                         <th scope="col" class="px-6 py-4">Departamento</th>
+                        <th scope="col" class="px-6 py-4">Jornada</th>
                         <th scope="col" class="px-6 py-4">Status</th>
                         <th scope="col" class="px-6 py-4">Admissão</th>
                         <th scope="col" class="px-6 py-4 text-center">Ações</th>
@@ -396,6 +441,21 @@ new class extends Component {
                         <td class="px-6 py-4 text-gray-600">{{ $employee->position ?? '-' }}</td>
                         <td class="px-6 py-4 text-gray-600">{{ $employee->department ?? '-' }}</td>
                         <td class="px-6 py-4">
+                            @if($employee->workSchedule)
+                                <div class="flex items-center gap-1.5">
+                                    <svg class="w-4 h-4 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"></path>
+                                    </svg>
+                                    <div>
+                                        <div class="text-sm font-medium text-gray-900">{{ $employee->workSchedule->name }}</div>
+                                        <div class="text-xs text-gray-500">{{ $employee->workSchedule->weekly_hours }}h/sem</div>
+                                    </div>
+                                </div>
+                            @else
+                                <span class="text-gray-400 text-sm">Sem jornada</span>
+                            @endif
+                        </td>
+                        <td class="px-6 py-4">
                             <span class="flex items-center">
                                 <span class="w-2 h-2 bg-{{ $employee->status_color }}-500 rounded-full mr-2 {{ $employee->status === 'active' ? 'animate-pulse' : '' }}"></span>
                                 <span class="px-3 py-1 bg-gradient-to-r from-{{ $employee->status_color }}-100 to-{{ $employee->status_color }}-100 text-{{ $employee->status_color }}-700 rounded-lg text-xs font-semibold">
@@ -406,6 +466,16 @@ new class extends Component {
                         <td class="px-6 py-4 text-gray-600">{{ $employee->admission_date->format('d/m/Y') }}</td>
                         <td class="px-6 py-4">
                             <div class="flex items-center justify-center gap-2">
+                                @if($employee->unique_code)
+                                <button wire:click="showEmployeeCode({{ $employee->id }})"
+                                    class="p-2 text-purple-600 hover:bg-purple-100 rounded-lg transition-all duration-200"
+                                    title="Ver Código de Acesso">
+                                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z"></path>
+                                    </svg>
+                                </button>
+                                @endif
+
                                 <button wire:click="openEditModal({{ $employee->id }})"
                                     class="p-2 text-blue-600 hover:bg-blue-100 rounded-lg transition-all duration-200"
                                     title="Editar">
@@ -591,6 +661,35 @@ new class extends Component {
                         @error('status') <span class="text-red-600 text-sm mt-1">{{ $message }}</span> @enderror
                     </div>
 
+                    <!-- Jornada de Trabalho -->
+                    <div>
+                        <label class="block text-sm font-semibold text-gray-700 mb-2 flex items-center gap-2">
+                            <svg class="w-4 h-4 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"></path>
+                            </svg>
+                            Jornada de Trabalho
+                        </label>
+                        <select wire:model="work_schedule_id"
+                            class="w-full px-4 py-2.5 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200">
+                            <option value="">Nenhuma jornada vinculada</option>
+                            @foreach($workSchedules as $schedule)
+                                <option value="{{ $schedule->id }}">
+                                    {{ $schedule->name }} ({{ $schedule->code }}) - {{ $schedule->weekly_hours }}h/sem
+                                </option>
+                            @endforeach
+                        </select>
+                        @error('work_schedule_id') <span class="text-red-600 text-sm mt-1">{{ $message }}</span> @enderror
+                        @if(empty($workSchedules) || $workSchedules->count() === 0)
+                            <p class="text-sm text-amber-600 mt-1 flex items-center gap-1">
+                                <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+                                    <path fill-rule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clip-rule="evenodd"></path>
+                                </svg>
+                                Nenhuma jornada cadastrada.
+                                <a href="{{ route('admin.work-schedules.index') }}" class="underline hover:text-amber-700">Cadastrar agora</a>
+                            </p>
+                        @endif
+                    </div>
+
                     <!-- Endereço -->
                     <div class="md:col-span-2">
                         <label class="block text-sm font-semibold text-gray-700 mb-2">Endereço</label>
@@ -649,5 +748,100 @@ new class extends Component {
             </form>
         </div>
     </div>
+    @endif
+
+    <!-- Modal de Código Único -->
+    @if($showCodeModal)
+    <div class="fixed inset-0 bg-gray-900/75 backdrop-blur-sm overflow-y-auto h-full w-full z-50 flex items-center justify-center p-4" wire:click.self="closeCodeModal">
+        <div class="relative bg-white rounded-2xl shadow-2xl max-w-lg w-full mx-auto overflow-hidden transform transition-all animate-modal-appear"
+            onclick="event.stopPropagation()">
+
+            <!-- Header com Gradiente -->
+            <div class="bg-gradient-to-r from-blue-600 to-indigo-600 px-6 py-4 text-center">
+                <div class="flex justify-center mb-3">
+                    <div class="w-16 h-16 bg-white/20 backdrop-blur-sm rounded-full flex items-center justify-center">
+                        <svg class="w-10 h-10 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1721 9z"></path>
+                        </svg>
+                    </div>
+                </div>
+                <h3 class="text-2xl font-bold text-white mb-1">
+                    Código de Acesso
+                </h3>
+                <p class="text-blue-100">
+                    {{ $generatedEmployeeName }}
+                </p>
+            </div>
+
+            <!-- Corpo do Modal -->
+            <div class="p-6">
+                <!-- Código em Destaque -->
+                <div class="bg-gradient-to-br from-blue-50 to-indigo-50 rounded-2xl py-12 px-6 border-2 border-blue-200 mb-4">
+                    <div class="flex items-center justify-center gap-3 mb-4">
+                        <svg class="w-8 h-8 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z"></path>
+                        </svg>
+                        <p class="text-gray-700 font-semibold text-lg">Código Único</p>
+                    </div>
+
+                    <div class="text-center">
+                        <p class="text-9xl font-bold text-blue-600 font-mono tracking-wider" style="letter-spacing: 0.20em;">
+                            {{ $generatedCode }}
+                        </p>
+                    </div>
+                </div>
+
+                <!-- Instruções -->
+                <div class="bg-yellow-50 border-l-4 border-yellow-400 p-4 rounded-lg mb-6">
+                    <div class="flex items-start">
+                        <svg class="w-6 h-6 text-yellow-600 mr-3 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                        </svg>
+                        <div>
+                            <p class="text-sm font-semibold text-yellow-800 mb-1">Importante!</p>
+                            <p class="text-sm text-yellow-700">
+                                Este código é único e necessário para o funcionário acessar o sistema de registro de ponto via PWA.
+                                Certifique-se de anotá-lo e entregá-lo ao funcionário com segurança.
+                            </p>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Botões de Ação -->
+                <div class="flex gap-2">
+                    <button type="button" onclick="navigator.clipboard.writeText('{{ $generatedCode }}').then(() => alert('Código copiado!'))"
+                        class="flex-1 px-4 py-2.5 bg-gray-100 text-gray-700 rounded-xl hover:bg-gray-200 transition-all duration-200 flex items-center justify-center gap-2 text-sm font-medium">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"></path>
+                        </svg>
+                        Copiar
+                    </button>
+                    <button type="button" wire:click="closeCodeModal"
+                        class="flex-1 px-4 py-2.5 bg-gradient-to-r from-blue-600 to-indigo-600 text-white rounded-xl hover:from-blue-700 hover:to-indigo-700 transition-all duration-200 shadow-lg hover:shadow-xl flex items-center justify-center gap-2 text-sm font-medium">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
+                        </svg>
+                        Fechar
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <style>
+        @keyframes modal-appear {
+            from {
+                opacity: 0;
+                transform: scale(0.95) translateY(-20px);
+            }
+            to {
+                opacity: 1;
+                transform: scale(1) translateY(0);
+            }
+        }
+        .animate-modal-appear {
+            animation: modal-appear 0.3s ease-out;
+        }
+    </style>
     @endif
 </div>

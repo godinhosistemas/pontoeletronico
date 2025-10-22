@@ -214,7 +214,7 @@ new class extends Component {
 }; ?>
 
 <div>
-    @section('page-title', 'Gerenciar Tenants')
+    @section('page-title', 'Gerenciar Empresas')
 
     <!-- Header with Search and Create Button -->
     <div class="mb-4 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
@@ -224,7 +224,7 @@ new class extends Component {
         </div>
         <button wire:click="create"
             class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500">
-            Novo Tenant
+            Nova Empresa
         </button>
     </div>
 

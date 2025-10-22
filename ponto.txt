@@ -1,0 +1,15 @@
+Opções sugeridas:
+
+  1. Reconhecimento Facial Real - Implementar face-api.js para validação biométrica
+  2. Geolocalização - Adicionar validação de local no registro de ponto
+  3. Relatórios Avançados - Criar relatórios de horas extras, ausências, etc.
+  4. Notificações - Push notifications para lembretes de ponto
+  5. Dashboard - Melhorar visualização com gráficos e estatísticas
+  6. Integração de Folha de Pagamento - Cálculo automático de pagamentos
+  7. Melhorias na Interface - Refinar UX/UI do sistema
+  8. Testes - Adicionar testes automatizados
+  9. Outra funcionalidade - Me diga o que você precisa!
+
+Cálculo de dias úteis.
+Carga horária semanal.
+Feriados através da API Invertexto disponível em https://api.invertexto.com
