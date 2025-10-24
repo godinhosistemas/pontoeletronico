@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\Employee;
 use App\Models\TimeEntry;
+use App\Services\ReceiptService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\Validator;
@@ -483,6 +484,16 @@ class PwaClockController extends Controller
         // Salva entrada
         $entry->save();
 
+        // Gera comprovante de registro de ponto
+        $receiptService = app(ReceiptService::class);
+        $receipt = $receiptService->generateReceipt($entry, $employee, $action, [
+            'ip_address' => $request->ip(),
+            'gps_latitude' => $request->latitude,
+            'gps_longitude' => $request->longitude,
+            'gps_accuracy' => $request->gps_accuracy,
+            'photo_path' => $path ?? null,
+        ]);
+
         return response()->json([
             'success' => true,
             'message' => $message,
@@ -492,6 +503,13 @@ class PwaClockController extends Controller
                 'lunch_start' => $entry->formatted_lunch_start,
                 'lunch_end' => $entry->formatted_lunch_end,
                 'total_hours' => $entry->total_hours,
+            ],
+            'receipt' => [
+                'uuid' => $receipt->uuid,
+                'authenticator_code' => $receipt->authenticator_code,
+                'download_url' => $receipt->download_url,
+                'view_url' => $receipt->view_url,
+                'available_until' => $receipt->available_until->format('d/m/Y H:i'),
             ]
         ]);
     }

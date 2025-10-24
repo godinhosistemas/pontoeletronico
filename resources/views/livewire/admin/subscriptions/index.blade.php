@@ -290,16 +290,14 @@ new class extends Component {
 
     <!-- Modal -->
     @if($showModal)
-    <div class="fixed inset-0 z-50 overflow-y-auto" aria-labelledby="modal-title" role="dialog" aria-modal="true" x-data="{ show: true }">
-        <div class="flex items-center justify-center min-h-screen pt-4 px-4 pb-20 text-center sm:p-0">
-            <!-- Overlay -->
-            <div class="fixed inset-0 bg-gray-500 bg-opacity-75 transition-opacity" aria-hidden="true" wire:click="closeModal"></div>
+    <div class="fixed inset-0 z-50 overflow-y-auto" aria-labelledby="modal-title" role="dialog" aria-modal="true">
+        <!-- Overlay com z-index menor -->
+        <div class="fixed inset-0 bg-gray-500 bg-opacity-75 transition-opacity z-40" aria-hidden="true" wire:click="closeModal"></div>
 
-            <!-- Spacer para centralizar -->
-            <span class="hidden sm:inline-block sm:align-middle sm:h-screen" aria-hidden="true">&#8203;</span>
-
-            <!-- Modal Content -->
-            <div class="relative inline-block align-bottom bg-white rounded-2xl text-left overflow-visible shadow-xl transform transition-all sm:my-8 sm:align-middle sm:max-w-lg sm:w-full z-10">
+        <!-- Container centralizado -->
+        <div class="flex min-h-screen items-center justify-center p-4">
+            <!-- Modal Content com z-index maior -->
+            <div class="relative z-50 inline-block align-bottom bg-white rounded-2xl text-left overflow-visible shadow-xl transform transition-all sm:my-8 sm:align-middle sm:max-w-lg sm:w-full">
                 @if($modalAction === 'cancel')
                 <form wire:submit.prevent="cancelSubscription">
                     <div class="bg-white px-6 pt-5 pb-4 sm:p-6">
@@ -374,4 +372,13 @@ new class extends Component {
         </div>
     </div>
     @endif
+
+    <!-- Estilo inline para o modal -->
+    <style>
+        /* Garantir que o modal fique acima de tudo */
+        [role="dialog"] {
+            position: fixed !important;
+            z-index: 9999 !important;
+        }
+    </style>
 </div>

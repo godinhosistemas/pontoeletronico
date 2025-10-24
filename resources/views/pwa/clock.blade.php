@@ -16,10 +16,6 @@
 
     @vite(['resources/css/app.css'])
 
-    <!-- Face Recognition API -->
-    <script defer src="/face-api.min.js"></script>
-    <script defer src="/js/face-recognition.js"></script>
-
     <style>
         * {
             margin: 0;
@@ -373,49 +369,11 @@
             font-size: 80px;
         }
 
-        /* Face Recognition Status */
-        .face-status {
-            position: absolute;
-            top: 20px;
-            left: 20px;
-            background: rgba(0, 0, 0, 0.8);
-            padding: 15px 20px;
-            border-radius: 10px;
-            color: white;
-            display: flex;
-            align-items: center;
-            gap: 10px;
-            z-index: 20;
-        }
-
-        .face-status-icon {
-            font-size: 24px;
-        }
-
-        .face-status-text {
-            font-size: 14px;
-            font-weight: 600;
-        }
-
-        .face-detected {
-            background: rgba(22, 163, 74, 0.9) !important;
-        }
-
-        .face-not-detected {
-            background: rgba(220, 38, 38, 0.9) !important;
-        }
-
-        #face-canvas {
-            position: absolute;
-            top: 0;
-            left: 0;
-            z-index: 5;
-        }
 
         /* GPS Status */
         .gps-status {
             position: absolute;
-            top: 70px;
+            top: 20px;
             left: 20px;
             background: rgba(0, 0, 0, 0.8);
             padding: 12px 16px;
@@ -484,21 +442,12 @@
                     <div>Aguardando validação...</div>
                 </div>
                 <video id="video" autoplay playsinline style="display: none;"></video>
-
-                <!-- Canvas para desenhar detecção facial -->
-                <canvas id="face-canvas" style="position: absolute; top: 0; left: 0;"></canvas>
-
                 <canvas id="canvas"></canvas>
                 <div class="face-guide" id="face-guide" style="display: none;"></div>
                 <div class="camera-message" id="camera-message" style="display: none;">
                     APROXIME SEU CARTÃO DE IDENTIFICAÇÃO
                 </div>
 
-                <!-- Status de Reconhecimento Facial -->
-                <div class="face-status" id="face-status" style="display: none;">
-                    <div class="face-status-icon" id="face-status-icon">👤</div>
-                    <div class="face-status-text" id="face-status-text">Detectando rosto...</div>
-                </div>
 
                 <!-- Status de Geolocalização -->
                 <div class="gps-status" id="gps-status" style="display: none;">
@@ -726,14 +675,6 @@
         updateDateTime();
 
         // ====================
-        // RECONHECIMENTO FACIAL
-        // ====================
-
-        let faceRecognitionEnabled = false;
-        let employeeFaceDescriptor = null;
-        let faceValidated = false;
-
-        // ====================
         // GEOLOCALIZAÇÃO
         // ====================
 
@@ -741,21 +682,6 @@
         let gpsValidated = false;
         let currentPosition = null;
         let watchId = null;
-
-        // Carrega modelos quando a página carregar
-        window.addEventListener('load', async () => {
-            try {
-                console.log('[Face] Carregando modelos...');
-                const loaded = await window.faceRecognition.loadModels();
-                if (loaded) {
-                    faceRecognitionEnabled = true;
-                    console.log('[Face] Reconhecimento facial ativado!');
-                }
-            } catch (error) {
-                console.error('[Face] Erro ao carregar:', error);
-                faceRecognitionEnabled = false;
-            }
-        });
 
         // Adiciona dígito
         function addDigit(digit) {
@@ -916,11 +842,6 @@
 
                 // Aguarda vídeo estar pronto
                 video.onloadedmetadata = () => {
-                    // Inicia detecção facial se habilitado
-                    if (faceRecognitionEnabled && currentEmployee) {
-                        startFaceDetection();
-                    }
-
                     // Inicia monitoramento GPS
                     startGpsTracking();
                 };
@@ -935,120 +856,6 @@
             }
         }
 
-        // Inicia detecção facial contínua
-        function startFaceDetection() {
-            if (!faceRecognitionEnabled) return;
-
-            const video = document.getElementById('video');
-            const canvas = document.getElementById('face-canvas');
-            const faceStatus = document.getElementById('face-status');
-
-            faceStatus.style.display = 'flex';
-
-            window.faceRecognition.startContinuousDetection(video, canvas, async (result) => {
-                const statusIcon = document.getElementById('face-status-icon');
-                const statusText = document.getElementById('face-status-text');
-
-                if (result.detected) {
-                    faceStatus.classList.add('face-detected');
-                    faceStatus.classList.remove('face-not-detected');
-                    statusIcon.textContent = '✅';
-                    statusText.textContent = `Rosto detectado (${(result.confidence * 100).toFixed(0)}%)`;
-
-                    // Se ainda não validou, valida o rosto
-                    if (!faceValidated && result.descriptor) {
-                        await validateEmployeeFace(result.descriptor);
-                    }
-                } else {
-                    faceStatus.classList.remove('face-detected');
-                    faceStatus.classList.add('face-not-detected');
-                    statusIcon.textContent = '❌';
-                    statusText.textContent = 'Nenhum rosto detectado';
-                    faceValidated = false;
-                }
-            });
-        }
-
-        // Para detecção facial
-        function stopFaceDetection() {
-            if (window.faceRecognition) {
-                window.faceRecognition.stopContinuousDetection();
-            }
-            const faceStatus = document.getElementById('face-status');
-            if (faceStatus) {
-                faceStatus.style.display = 'none';
-            }
-        }
-
-        // Valida rosto do funcionário
-        async function validateEmployeeFace(descriptor) {
-            try {
-                const response = await fetch('/api/pwa/validate-face', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'X-CSRF-TOKEN': '{{ csrf_token() }}'
-                    },
-                    body: JSON.stringify({
-                        employee_id: currentEmployee.id,
-                        descriptor: descriptor
-                    })
-                });
-
-                const data = await response.json();
-
-                if (data.match) {
-                    faceValidated = true;
-                    console.log(`[Face] ✅ Validado! Similaridade: ${data.similarity}%`);
-
-                    // Atualiza status visual
-                    const statusText = document.getElementById('face-status-text');
-                    statusText.textContent = `Rosto reconhecido (${data.similarity}% match)`;
-
-                    // Som de sucesso
-                    playSuccessSound();
-                } else if (data.needs_registration) {
-                    // Funcionário não tem rosto cadastrado - cadastra automaticamente
-                    console.log('[Face] Cadastrando rosto pela primeira vez...');
-                    await saveFaceDescriptor(descriptor);
-                } else {
-                    console.warn(`[Face] ❌ Rosto não reconhecido. Similaridade: ${data.similarity}%`);
-                    faceValidated = false;
-                }
-            } catch (error) {
-                console.error('[Face] Erro na validação:', error);
-            }
-        }
-
-        // Salva descritor facial (primeiro uso)
-        async function saveFaceDescriptor(descriptor) {
-            try {
-                const response = await fetch('/api/pwa/save-face-descriptor', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'X-CSRF-TOKEN': '{{ csrf_token() }}'
-                    },
-                    body: JSON.stringify({
-                        employee_id: currentEmployee.id,
-                        descriptor: descriptor
-                    })
-                });
-
-                const data = await response.json();
-
-                if (data.success) {
-                    console.log('[Face] ✅ Descritor facial cadastrado!');
-                    faceValidated = true;
-                    playSuccessSound();
-
-                    const statusText = document.getElementById('face-status-text');
-                    statusText.textContent = 'Rosto cadastrado com sucesso!';
-                }
-            } catch (error) {
-                console.error('[Face] Erro ao salvar descritor:', error);
-            }
-        }
 
         // ====================
         // FUNÇÕES DE GEOLOCALIZAÇÃO
@@ -1187,17 +994,9 @@
 
         // Captura foto e registra ponto
         async function captureAndRegister(action) {
-            // Verifica se o rosto foi validado
-            if (faceRecognitionEnabled && !faceValidated) {
-                alert('⚠️ Aguarde a validação facial antes de registrar o ponto!');
-                return;
-            }
-
-            // Verifica se a geolocalização foi validada (se exigida)
-            if (currentEmployee.require_geolocation && !gpsValidated) {
-                alert('⚠️ Aguarde a validação de localização antes de registrar o ponto!');
-                return;
-            }
+            // Desabilita botão temporariamente
+            const buttons = document.querySelectorAll('.action-btn');
+            buttons.forEach(btn => btn.disabled = true);
 
             const video = document.getElementById('video');
             const canvas = document.getElementById('canvas');
@@ -1242,27 +1041,33 @@
                         // Reproduz som de flash de câmera
                         playCameraShutterSound();
 
-                        // Aguarda 1 segundo e volta para tela inicial
+                        // Aguarda 500ms e volta para tela inicial
                         setTimeout(() => {
                             resetToInitialScreen();
-                        }, 1000);
+                        }, 500);
                     } else {
-                        // Reproduz som de erro
+                        // Reproduz som de erro e mostra mensagem
                         playErrorSound();
+                        alert(data.message || 'Erro ao registrar ponto');
+
+                        // Reabilita botões
+                        buttons.forEach(btn => btn.disabled = false);
+                        updateButtonStates(data.entry || {});
                     }
                 } catch (error) {
                     console.error('Erro ao registrar:', error);
                     // Reproduz som de erro
                     playErrorSound();
+                    alert('Erro ao registrar ponto. Tente novamente.');
+
+                    // Reabilita botões
+                    buttons.forEach(btn => btn.disabled = false);
                 }
             }, 'image/jpeg', 0.9);
         }
 
         // Reseta para tela inicial
         function resetToInitialScreen() {
-            // Para detecção facial
-            stopFaceDetection();
-
             // Para GPS tracking
             stopGpsTracking();
 
@@ -1275,7 +1080,6 @@
             // Reseta variáveis
             currentEmployee = null;
             currentCode = '';
-            faceValidated = false;
             gpsValidated = false;
 
             // Esconde vídeo e mostra placeholder

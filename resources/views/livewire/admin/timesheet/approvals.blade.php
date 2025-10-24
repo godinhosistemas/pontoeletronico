@@ -445,10 +445,13 @@ new class extends Component {
     <!-- Modal de Detalhes -->
     @if($showDetailsModal && $selectedEntry)
     <div class="fixed inset-0 z-50 overflow-y-auto" aria-labelledby="modal-title" role="dialog" aria-modal="true">
-        <div class="flex items-end justify-center min-h-screen pt-4 px-4 pb-20 text-center sm:block sm:p-0">
-            <div class="fixed inset-0 bg-gray-500 bg-opacity-75 transition-opacity" wire:click="closeModal"></div>
+        <!-- Overlay com z-index menor -->
+        <div class="fixed inset-0 bg-gray-500 bg-opacity-75 transition-opacity z-40" wire:click="closeModal"></div>
 
-            <div class="inline-block align-bottom bg-white rounded-lg text-left overflow-hidden shadow-xl transform transition-all sm:my-8 sm:align-middle sm:max-w-lg sm:w-full">
+        <!-- Container centralizado -->
+        <div class="flex min-h-screen items-center justify-center p-4">
+            <!-- Modal Content com z-index maior -->
+            <div class="relative z-50 inline-block align-bottom bg-white rounded-lg text-left overflow-hidden shadow-xl transform transition-all sm:my-8 sm:align-middle sm:max-w-lg sm:w-full">
                 <div class="bg-white px-4 pt-5 pb-4 sm:p-6 sm:pb-4">
                     <h3 class="text-lg font-medium text-gray-900 mb-4">Detalhes do Registro</h3>
 
@@ -586,10 +589,13 @@ new class extends Component {
     <!-- Modal de Ajuste -->
     @if($showAdjustModal && $entryToAdjust)
     <div class="fixed inset-0 z-50 overflow-y-auto" aria-labelledby="modal-title" role="dialog" aria-modal="true">
-        <div class="flex items-end justify-center min-h-screen pt-4 px-4 pb-20 text-center sm:block sm:p-0">
-            <div class="fixed inset-0 bg-gray-500 bg-opacity-75 transition-opacity" wire:click="closeAdjustModal"></div>
+        <!-- Overlay com z-index menor -->
+        <div class="fixed inset-0 bg-gray-500 bg-opacity-75 transition-opacity z-40" wire:click="closeAdjustModal"></div>
 
-            <div class="inline-block align-bottom bg-white rounded-lg text-left overflow-hidden shadow-xl transform transition-all sm:my-8 sm:align-middle sm:max-w-2xl sm:w-full">
+        <!-- Container centralizado -->
+        <div class="flex min-h-screen items-center justify-center p-4">
+            <!-- Modal Content com z-index maior -->
+            <div class="relative z-50 inline-block align-bottom bg-white rounded-lg text-left overflow-hidden shadow-xl transform transition-all sm:my-8 sm:align-middle sm:max-w-2xl sm:w-full">
                 <form wire:submit="saveAdjustment">
                     <div class="bg-gradient-to-r from-purple-600 to-indigo-600 px-6 py-4">
                         <h3 class="text-lg font-bold text-white flex items-center gap-2">
@@ -717,4 +723,13 @@ new class extends Component {
         </div>
     </div>
     @endif
+
+    <!-- Estilo inline para os modais -->
+    <style>
+        /* Garantir que os modais fiquem acima de tudo */
+        [role="dialog"] {
+            position: fixed !important;
+            z-index: 9999 !important;
+        }
+    </style>
 </div>

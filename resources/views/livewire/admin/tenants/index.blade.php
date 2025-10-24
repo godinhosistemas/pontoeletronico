@@ -2,19 +2,23 @@
 
 use Livewire\Volt\Component;
 use Livewire\WithPagination;
+use Livewire\WithFileUploads;
 use App\Models\Tenant;
 use App\Models\Plan;
 use App\Models\User;
+use App\Services\CertificateService;
 use Illuminate\Support\Str;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\DB;
 
 new class extends Component {
-    use WithPagination;
+    use WithPagination, WithFileUploads;
 
     public $search = '';
     public $showModal = false;
+    public $showCertificateModal = false;
     public $editMode = false;
+    public $certificateTenantId;
 
     // Form fields
     public $tenantId;
@@ -35,6 +39,10 @@ new class extends Component {
     public $supervisor_email = '';
     public $supervisor_password = '';
     public $supervisor_password_confirmation = '';
+
+    // Certificate fields
+    public $certificate_file;
+    public $certificate_password = '';
 
     protected $queryString = ['search'];
 
@@ -197,6 +205,76 @@ new class extends Component {
         $this->supervisor_password_confirmation = '';
     }
 
+    public function openCertificateModal($tenantId)
+    {
+        $this->certificateTenantId = $tenantId;
+        $this->certificate_file = null;
+        $this->certificate_password = '';
+        $this->showCertificateModal = true;
+    }
+
+    public function closeCertificateModal()
+    {
+        $this->showCertificateModal = false;
+        $this->certificateTenantId = null;
+        $this->certificate_file = null;
+        $this->certificate_password = '';
+    }
+
+    public function uploadCertificate()
+    {
+        $this->validate([
+            'certificate_file' => 'required|file|mimes:pfx,p12|max:2048',
+            'certificate_password' => 'required|string',
+        ], [
+            'certificate_file.required' => 'O arquivo do certificado é obrigatório',
+            'certificate_file.mimes' => 'O certificado deve ser um arquivo .pfx ou .p12',
+            'certificate_file.max' => 'O arquivo não pode ser maior que 2MB',
+            'certificate_password.required' => 'A senha do certificado é obrigatória',
+        ]);
+
+        try {
+            $tenant = Tenant::findOrFail($this->certificateTenantId);
+
+            // Salva arquivo temporário
+            $tempPath = $this->certificate_file->getRealPath();
+
+            // Usa o serviço para validar e armazenar
+            $certificateService = app(CertificateService::class);
+            $success = $certificateService->storeCertificate(
+                $tenant,
+                $tempPath,
+                $this->certificate_password
+            );
+
+            if ($success) {
+                session()->flash('success', 'Certificado digital cadastrado com sucesso!');
+                $this->closeCertificateModal();
+            } else {
+                session()->flash('error', 'Certificado inválido ou senha incorreta. Verifique se é um certificado ICP-Brasil válido.');
+            }
+
+        } catch (\Exception $e) {
+            session()->flash('error', 'Erro ao processar certificado: ' . $e->getMessage());
+        }
+    }
+
+    public function removeCertificate($tenantId)
+    {
+        try {
+            $tenant = Tenant::findOrFail($tenantId);
+            $certificateService = app(CertificateService::class);
+
+            if ($certificateService->removeCertificate($tenant)) {
+                session()->flash('success', 'Certificado removido com sucesso!');
+            } else {
+                session()->flash('error', 'Erro ao remover certificado.');
+            }
+        } catch (\Exception $e) {
+            session()->flash('error', 'Erro ao remover certificado: ' . $e->getMessage());
+        }
+    }
+
     public function with()
     {
         return [
@@ -238,6 +316,7 @@ new class extends Component {
                         <th scope="col" class="px-6 py-3">Email</th>
                         <th scope="col" class="px-6 py-3">CNPJ</th>
                         <th scope="col" class="px-6 py-3">Plano</th>
+                        <th scope="col" class="px-6 py-3">Certificado</th>
                         <th scope="col" class="px-6 py-3">Status</th>
                         <th scope="col" class="px-6 py-3">Ações</th>
                     </tr>
@@ -256,6 +335,31 @@ new class extends Component {
                             @endif
                         </td>
                         <td class="px-6 py-4">
+                            @if($tenant->hasCertificate())
+                                @php
+                                    $days = $tenant->certificateDaysRemaining();
+                                @endphp
+                                @if($days <= 7)
+                                    <span class="px-2 py-1 text-xs font-semibold text-red-800 bg-red-100 rounded-full" title="{{ $tenant->certificate_status }}">
+                                        ⚠️ {{ $days }} dias
+                                    </span>
+                                @elseif($days <= 30)
+                                    <span class="px-2 py-1 text-xs font-semibold text-yellow-800 bg-yellow-100 rounded-full" title="{{ $tenant->certificate_status }}">
+                                        ⏰ {{ $days }} dias
+                                    </span>
+                                @else
+                                    <span class="px-2 py-1 text-xs font-semibold text-green-800 bg-green-100 rounded-full" title="{{ $tenant->certificate_status }}">
+                                        ✓ Válido
+                                    </span>
+                                @endif
+                            @else
+                                <button wire:click="openCertificateModal({{ $tenant->id }})"
+                                    class="px-2 py-1 text-xs font-semibold text-gray-700 bg-gray-200 rounded-full hover:bg-gray-300 cursor-pointer">
+                                    + Adicionar
+                                </button>
+                            @endif
+                        </td>
+                        <td class="px-6 py-4">
                             <button wire:click="toggleStatus({{ $tenant->id }})"
                                 class="focus:outline-none">
                                 @if($tenant->is_active)
@@ -271,6 +375,17 @@ new class extends Component {
                                     class="text-blue-600 hover:text-blue-800">
                                     Editar
                                 </button>
+                                @if($tenant->hasCertificate())
+                                <button wire:click="openCertificateModal({{ $tenant->id }})"
+                                    class="text-green-600 hover:text-green-800" title="Renovar certificado">
+                                    🔐 Certificado
+                                </button>
+                                <button wire:click="removeCertificate({{ $tenant->id }})"
+                                    wire:confirm="Tem certeza que deseja remover o certificado digital?"
+                                    class="text-orange-600 hover:text-orange-800" title="Remover certificado">
+                                    🗑️
+                                </button>
+                                @endif
                                 <button wire:click="delete({{ $tenant->id }})"
                                     wire:confirm="Tem certeza que deseja excluir este tenant?"
                                     class="text-red-600 hover:text-red-800">
@@ -281,7 +396,7 @@ new class extends Component {
                     </tr>
                     @empty
                     <tr>
-                        <td colspan="6" class="px-6 py-4 text-center text-gray-500">Nenhum tenant encontrado</td>
+                        <td colspan="7" class="px-6 py-4 text-center text-gray-500">Nenhum tenant encontrado</td>
                     </tr>
                     @endforelse
                 </tbody>
@@ -296,16 +411,14 @@ new class extends Component {
 
     <!-- Modal -->
     @if($showModal)
-    <div class="fixed inset-0 z-50 overflow-y-auto" aria-labelledby="modal-title" role="dialog" aria-modal="true" x-data="{ show: true }">
-        <div class="flex items-center justify-center min-h-screen pt-4 px-4 pb-20 text-center sm:p-0">
-            <!-- Overlay -->
-            <div class="fixed inset-0 bg-gray-500 bg-opacity-75 transition-opacity" aria-hidden="true" wire:click="closeModal"></div>
+    <div class="fixed inset-0 z-50 overflow-y-auto" aria-labelledby="modal-title" role="dialog" aria-modal="true">
+        <!-- Overlay com z-index menor -->
+        <div class="fixed inset-0 bg-gray-500 bg-opacity-75 transition-opacity z-40" aria-hidden="true" wire:click="closeModal"></div>
 
-            <!-- Espacer para centralizar -->
-            <span class="hidden sm:inline-block sm:align-middle sm:h-screen" aria-hidden="true">&#8203;</span>
-
-            <!-- Modal Content -->
-            <div class="relative inline-block align-bottom bg-white rounded-lg text-left overflow-visible shadow-xl transform transition-all sm:my-8 sm:align-middle sm:max-w-lg sm:w-full z-10">
+        <!-- Container centralizado -->
+        <div class="flex min-h-screen items-center justify-center p-4">
+            <!-- Modal Content com z-index maior -->
+            <div class="relative z-50 inline-block align-bottom bg-white rounded-lg text-left overflow-visible shadow-xl transform transition-all sm:my-8 sm:align-middle sm:max-w-lg sm:w-full">
                 <form wire:submit.prevent="save" autocomplete="off">
                     <div class="bg-white px-4 pt-5 pb-4 sm:p-6 sm:pb-4">
                         <h3 class="text-lg font-medium text-gray-900 mb-4">
@@ -432,4 +545,121 @@ new class extends Component {
         </div>
     </div>
     @endif
+
+    <!-- Modal de Upload de Certificado -->
+    @if($showCertificateModal)
+    <div class="fixed inset-0 z-50 overflow-y-auto" aria-labelledby="certificate-modal-title" role="dialog" aria-modal="true">
+        <!-- Overlay com z-index menor -->
+        <div class="fixed inset-0 bg-gray-500 bg-opacity-75 transition-opacity z-40" aria-hidden="true" wire:click="closeCertificateModal"></div>
+
+        <!-- Container centralizado -->
+        <div class="flex min-h-screen items-center justify-center p-4">
+            <!-- Modal Content com z-index maior -->
+            <div class="relative z-50 inline-block align-bottom bg-white rounded-lg text-left overflow-visible shadow-xl transform transition-all sm:my-8 sm:align-middle sm:max-w-lg sm:w-full">
+                <form wire:submit.prevent="uploadCertificate" enctype="multipart/form-data">
+                    <div class="bg-white px-4 pt-5 pb-4 sm:p-6 sm:pb-4">
+                        <div class="flex items-center mb-4">
+                            <div class="mx-auto flex-shrink-0 flex items-center justify-center h-12 w-12 rounded-full bg-blue-100 sm:mx-0 sm:h-10 sm:w-10">
+                                <span class="text-2xl">🔐</span>
+                            </div>
+                            <h3 class="ml-3 text-lg font-medium text-gray-900" id="certificate-modal-title">
+                                Certificado Digital ICP-Brasil
+                            </h3>
+                        </div>
+
+                        <div class="mt-4 space-y-4">
+                            <div class="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                                <h4 class="text-sm font-semibold text-blue-900 mb-2">📋 Requisitos:</h4>
+                                <ul class="text-xs text-blue-800 space-y-1">
+                                    <li>• Certificado deve ser ICP-Brasil válido</li>
+                                    <li>• Formato: .pfx ou .p12</li>
+                                    <li>• Tamanho máximo: 2MB</li>
+                                    <li>• Tipos aceitos: A1 (arquivo) ou A3</li>
+                                </ul>
+                            </div>
+
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 mb-2">
+                                    Arquivo do Certificado (.pfx ou .p12)
+                                </label>
+                                <div class="mt-1 flex justify-center px-6 pt-5 pb-6 border-2 border-gray-300 border-dashed rounded-md hover:border-blue-400 transition-colors">
+                                    <div class="space-y-1 text-center">
+                                        <svg class="mx-auto h-12 w-12 text-gray-400" stroke="currentColor" fill="none" viewBox="0 0 48 48">
+                                            <path d="M28 8H12a4 4 0 00-4 4v20m32-12v8m0 0v8a4 4 0 01-4 4H12a4 4 0 01-4-4v-4m32-4l-3.172-3.172a4 4 0 00-5.656 0L28 28M8 32l9.172-9.172a4 4 0 015.656 0L28 28m0 0l4 4m4-24h8m-4-4v8m-12 4h.02" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+                                        </svg>
+                                        <div class="flex text-sm text-gray-600">
+                                            <label for="certificate-upload" class="relative cursor-pointer bg-white rounded-md font-medium text-blue-600 hover:text-blue-500 focus-within:outline-none focus-within:ring-2 focus-within:ring-offset-2 focus-within:ring-blue-500">
+                                                <span>Selecionar arquivo</span>
+                                                <input id="certificate-upload" name="certificate-upload" type="file" class="sr-only"
+                                                    wire:model="certificate_file" accept=".pfx,.p12">
+                                            </label>
+                                            <p class="pl-1">ou arraste aqui</p>
+                                        </div>
+                                        <p class="text-xs text-gray-500">.pfx ou .p12 até 2MB</p>
+                                    </div>
+                                </div>
+                                @if($certificate_file)
+                                    <p class="mt-2 text-sm text-green-600">
+                                        ✓ Arquivo selecionado: {{ $certificate_file->getClientOriginalName() }}
+                                    </p>
+                                @endif
+                                @error('certificate_file')
+                                    <span class="text-red-500 text-xs mt-1 block">{{ $message }}</span>
+                                @enderror
+
+                                <div wire:loading wire:target="certificate_file" class="mt-2">
+                                    <div class="flex items-center text-sm text-blue-600">
+                                        <svg class="animate-spin h-4 w-4 mr-2" viewBox="0 0 24 24">
+                                            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" fill="none"></circle>
+                                            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                        </svg>
+                                        Carregando arquivo...
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700">
+                                    Senha do Certificado
+                                </label>
+                                <input wire:model="certificate_password" type="password" placeholder="Digite a senha do certificado"
+                                    class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:border-blue-500 focus:ring-blue-500 focus:outline-none">
+                                @error('certificate_password')
+                                    <span class="text-red-500 text-xs mt-1 block">{{ $message }}</span>
+                                @enderror
+                            </div>
+
+                            @if(session()->has('error'))
+                            <div class="bg-red-50 border border-red-200 text-red-800 rounded-lg p-3 text-sm">
+                                {{ session('error') }}
+                            </div>
+                            @endif
+                        </div>
+                    </div>
+
+                    <div class="bg-gray-50 px-4 py-3 sm:px-6 sm:flex sm:flex-row-reverse">
+                        <button type="submit" wire:loading.attr="disabled" wire:target="uploadCertificate,certificate_file"
+                            class="w-full inline-flex justify-center rounded-md border border-transparent shadow-sm px-4 py-2 bg-blue-600 text-base font-medium text-white hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 sm:ml-3 sm:w-auto sm:text-sm disabled:opacity-50 disabled:cursor-not-allowed">
+                            <span wire:loading.remove wire:target="uploadCertificate">Enviar e Validar</span>
+                            <span wire:loading wire:target="uploadCertificate">Processando...</span>
+                        </button>
+                        <button type="button" wire:click="closeCertificateModal"
+                            class="mt-3 w-full inline-flex justify-center rounded-md border border-gray-300 shadow-sm px-4 py-2 bg-white text-base font-medium text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 sm:mt-0 sm:ml-3 sm:w-auto sm:text-sm">
+                            Cancelar
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+    @endif
+
+    <!-- Estilo inline para os modais -->
+    <style>
+        /* Garantir que os modais fiquem acima de tudo */
+        [role="dialog"] {
+            position: fixed !important;
+            z-index: 9999 !important;
+        }
+    </style>
 </div>
