@@ -7,6 +7,7 @@ use App\Models\Employee;
 use App\Models\TimeEntryFile;
 use App\Services\AFDService;
 use App\Services\AEJService;
+use Illuminate\Foundation\Auth\Access\AuthorizesRequests;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Response;
@@ -16,6 +17,8 @@ use Illuminate\Support\Facades\Response;
  */
 class LegalFilesController extends Controller
 {
+    use AuthorizesRequests;
+
     private AFDService $afdService;
     private AEJService $aejService;
 

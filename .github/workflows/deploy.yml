@@ -1,0 +1,78 @@
+name: Deploy to Production
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    name: Deploy to Hostinger
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Deploy to server
+        uses: appleboy/ssh-action@master
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          port: 22
+          script: |
+            set -e
+            echo "🚀 Starting deployment..."
+
+            # Navigate to project
+            cd /var/www/pontoeletronico
+
+            # Pull latest changes
+            echo "📥 Pulling latest changes..."
+            git fetch origin
+            git reset --hard origin/main
+
+            # Backup database
+            echo "💾 Creating database backup..."
+            docker-compose exec -T db mysqldump -u root -p$DB_ROOT_PASSWORD $DB_DATABASE > backups/backup_$(date +%Y%m%d_%H%M%S).sql || true
+
+            # Build and deploy
+            echo "🔨 Building and deploying..."
+            docker-compose build --no-cache
+            docker-compose down
+            docker-compose up -d
+
+            # Wait for containers
+            echo "⏳ Waiting for containers..."
+            sleep 15
+
+            # Run migrations
+            echo "🔄 Running migrations..."
+            docker-compose exec -T app php artisan migrate --force
+
+            # Optimize
+            echo "⚡ Optimizing application..."
+            docker-compose exec -T app php artisan config:cache
+            docker-compose exec -T app php artisan route:cache
+            docker-compose exec -T app php artisan view:cache
+
+            # Restart queue
+            echo "🔄 Restarting queue workers..."
+            docker-compose restart queue
+
+            # Health check
+            echo "🏥 Health check..."
+            sleep 5
+            curl -f http://localhost:8000/health || echo "Warning: Health check failed"
+
+            echo "✅ Deployment completed successfully!"
+
+      - name: Notify on success
+        if: success()
+        run: echo "✅ Deploy completed successfully!"
+
+      - name: Notify on failure
+        if: failure()
+        run: echo "❌ Deploy failed!"

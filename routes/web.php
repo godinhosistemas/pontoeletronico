@@ -1,7 +1,37 @@
 <?php
 
 use Illuminate\Support\Facades\Route;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Redis;
 use Livewire\Volt\Volt;
+
+// Health Check - Para monitoramento Docker
+Route::get('/health', function () {
+    try {
+        // Verificar conexão com banco de dados
+        DB::connection()->getPdo();
+        $dbStatus = 'ok';
+    } catch (\Exception $e) {
+        $dbStatus = 'error';
+    }
+
+    try {
+        // Verificar conexão com Redis
+        Redis::connection()->ping();
+        $redisStatus = 'ok';
+    } catch (\Exception $e) {
+        $redisStatus = 'error';
+    }
+
+    $status = ($dbStatus === 'ok' && $redisStatus === 'ok') ? 200 : 503;
+
+    return response()->json([
+        'status' => $status === 200 ? 'healthy' : 'unhealthy',
+        'database' => $dbStatus,
+        'redis' => $redisStatus,
+        'timestamp' => now()->toIso8601String(),
+    ], $status);
+})->name('health');
 
 // Rotas de autenticação
 Route::middleware('guest')->group(function () {

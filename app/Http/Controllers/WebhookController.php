@@ -30,6 +30,25 @@ class WebhookController extends Controller
      */
     public function mercadopago(Request $request)
     {
+        // Buscar gateway para validação HMAC
+        $gateway = PaymentGateway::where('provider', 'mercadopago')
+            ->where('is_active', true)
+            ->first();
+
+        if (!$gateway) {
+            Log::warning('Gateway Mercado Pago não encontrado ou inativo');
+            return response()->json(['error' => 'Gateway not found'], 404);
+        }
+
+        // Validar assinatura HMAC (OBRIGATÓRIO para segurança)
+        if (!$this->validateMercadoPagoSignature($request, $gateway)) {
+            Log::error('Assinatura HMAC inválida no webhook Mercado Pago', [
+                'ip' => $request->ip(),
+                'signature' => $request->header('x-signature'),
+            ]);
+            return response()->json(['error' => 'Invalid signature'], 401);
+        }
+
         return $this->processWebhook($request, 'mercadopago');
     }
 
@@ -109,5 +128,68 @@ class WebhookController extends Controller
             'mercadopago' => $payload['type'] ?? null,
             default => null,
         };
+    }
+
+    /**
+     * Valida assinatura HMAC do Mercado Pago
+     * Documentação: https://www.mercadopago.com.br/developers/en/docs/your-integrations/notifications/webhooks
+     */
+    protected function validateMercadoPagoSignature(Request $request, PaymentGateway $gateway): bool
+    {
+        $signature = $request->header('x-signature');
+        $requestId = $request->header('x-request-id');
+
+        if (!$signature || !$requestId) {
+            Log::warning('Headers x-signature ou x-request-id ausentes');
+            return false;
+        }
+
+        // Extrair ts e v1 da assinatura
+        // Formato: ts=1234567890,v1=abc123def456...
+        $parts = [];
+        foreach (explode(',', $signature) as $part) {
+            [$key, $value] = explode('=', trim($part), 2);
+            $parts[$key] = $value;
+        }
+
+        $timestamp = $parts['ts'] ?? null;
+        $hash = $parts['v1'] ?? null;
+
+        if (!$timestamp || !$hash) {
+            Log::warning('Formato de assinatura inválido', ['signature' => $signature]);
+            return false;
+        }
+
+        // Validar timestamp (não aceitar webhooks com mais de 5 minutos)
+        $currentTime = time();
+        if (abs($currentTime - $timestamp) > 300) {
+            Log::warning('Webhook timestamp muito antigo ou futuro', [
+                'timestamp' => $timestamp,
+                'current' => $currentTime,
+                'diff' => abs($currentTime - $timestamp),
+            ]);
+            return false;
+        }
+
+        // Obter dados do webhook
+        $dataId = $request->input('data.id');
+
+        // Construir template conforme documentação
+        // Template: id:{data.id};request-id:{x-request-id};ts:{ts};
+        $template = "id:{$dataId};request-id:{$requestId};ts:{$timestamp};";
+
+        // Obter secret do gateway (deve estar armazenado nas configurações)
+        $secret = $gateway->webhook_secret ?? $gateway->api_secret ?? '';
+
+        if (empty($secret)) {
+            Log::error('Webhook secret não configurado para Mercado Pago');
+            return false;
+        }
+
+        // Calcular HMAC-SHA256
+        $calculatedHash = hash_hmac('sha256', $template, $secret);
+
+        // Comparar hashes (time-safe comparison)
+        return hash_equals($calculatedHash, $hash);
     }
 }

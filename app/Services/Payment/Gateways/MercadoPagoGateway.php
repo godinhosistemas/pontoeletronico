@@ -54,13 +54,20 @@ class MercadoPagoGateway implements PaymentGatewayInterface
 
         // Adicionar data de vencimento para boleto
         if ($method === 'boleto') {
-            $data['date_of_expiration'] = $invoice->due_date->format('Y-m-d\TH:i:s.000P');
+            // Formato ISO 8601 com timezone: 2025-10-25T23:59:59.000-03:00
+            // Usar timezone de São Paulo (padrão Brasil)
+            $dueDate = $invoice->due_date->clone()->setTimezone('America/Sao_Paulo');
+            $data['date_of_expiration'] = $dueDate->format('Y-m-d\TH:i:s.000P');
         }
 
         // Criar pagamento no Mercado Pago
+        // X-Idempotency-Key previne criação de pagamentos duplicados em caso de retry
+        $idempotencyKey = $this->generateIdempotencyKey($invoice, $method);
+
         $response = Http::withHeaders([
             'Authorization' => "Bearer {$this->gateway->getApiKey()}",
             'Content-Type' => 'application/json',
+            'X-Idempotency-Key' => $idempotencyKey,
         ])->post("{$this->baseUrl}/payments", $data);
 
         if (!$response->successful()) {
@@ -209,9 +216,22 @@ class MercadoPagoGateway implements PaymentGatewayInterface
 
     /**
      * Cancela um pagamento
+     * Para pagamentos aprovados, faz reembolso
+     * Para pagamentos pendentes, cancela diretamente
      */
     public function cancelPayment(Payment $payment): bool
     {
+        // Verificar status atual do pagamento
+        $currentStatus = $payment->status;
+
+        // Se pagamento foi aprovado/completado, fazer reembolso
+        if (in_array($currentStatus, ['approved', 'completed'])) {
+            return $this->refundPayment($payment);
+        }
+
+        // Para pagamentos pendentes, fazer cancelamento
+        // Endpoint correto: PUT /v1/payments/{id} com status=cancelled
+        // IMPORTANTE: Só funciona para pagamentos pendentes
         $response = Http::withHeaders([
             'Authorization' => "Bearer {$this->gateway->getApiKey()}",
             'Content-Type' => 'application/json',
@@ -220,14 +240,60 @@ class MercadoPagoGateway implements PaymentGatewayInterface
         ]);
 
         if (!$response->successful()) {
+            $error = $response->json();
             Log::error('Erro ao cancelar pagamento no Mercado Pago', [
                 'payment_id' => $payment->id,
-                'response' => $response->json(),
+                'transaction_id' => $payment->transaction_id,
+                'status' => $currentStatus,
+                'response' => $error,
             ]);
             return false;
         }
 
-        $payment->update(['status' => 'cancelled']);
+        $payment->update([
+            'status' => 'cancelled',
+            'cancelled_at' => now(),
+        ]);
+
+        return true;
+    }
+
+    /**
+     * Reembolsa um pagamento aprovado
+     * Endpoint: POST /v1/payments/{id}/refunds
+     */
+    protected function refundPayment(Payment $payment, ?float $amount = null): bool
+    {
+        $data = [];
+
+        // Reembolso parcial ou total
+        if ($amount !== null) {
+            $data['amount'] = $amount;
+        }
+
+        $response = Http::withHeaders([
+            'Authorization' => "Bearer {$this->gateway->getApiKey()}",
+            'Content-Type' => 'application/json',
+        ])->post("{$this->baseUrl}/payments/{$payment->transaction_id}/refunds", $data);
+
+        if (!$response->successful()) {
+            $error = $response->json();
+            Log::error('Erro ao reembolsar pagamento no Mercado Pago', [
+                'payment_id' => $payment->id,
+                'transaction_id' => $payment->transaction_id,
+                'amount' => $amount,
+                'response' => $error,
+            ]);
+            return false;
+        }
+
+        $refundData = $response->json();
+
+        $payment->update([
+            'status' => 'refunded',
+            'refunded_at' => now(),
+            'refund_data' => $refundData,
+        ]);
 
         return true;
     }
@@ -271,5 +337,27 @@ class MercadoPagoGateway implements PaymentGatewayInterface
             'charged_back' => 'chargeback',
             default => 'pending',
         };
+    }
+
+    /**
+     * Gera chave de idempotência única para prevenir pagamentos duplicados
+     * Baseado em: invoice_id + method + tenant_id + timestamp do dia
+     */
+    protected function generateIdempotencyKey(Invoice $invoice, string $method): string
+    {
+        // Usar data do dia para permitir retry em dias diferentes
+        $dateKey = now()->format('Y-m-d');
+
+        // Combinar dados únicos da transação
+        $data = implode('|', [
+            $invoice->id,
+            $invoice->tenant_id,
+            $method,
+            $invoice->invoice_number,
+            $dateKey,
+        ]);
+
+        // Gerar hash SHA-256
+        return hash('sha256', $data);
     }
 }
