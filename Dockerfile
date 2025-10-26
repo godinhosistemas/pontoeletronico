@@ -29,11 +29,15 @@ FROM php:8.3-fpm-alpine
 
 # Instalar dependências do sistema
 RUN apk add --no-cache \
+    # Ferramentas essenciais
     bash \
     curl \
     git \
     zip \
     unzip \
+    supervisor \
+    nginx \
+    # Bibliotecas de desenvolvimento
     libpng-dev \
     libjpeg-turbo-dev \
     freetype-dev \
@@ -42,8 +46,14 @@ RUN apk add --no-cache \
     icu-dev \
     oniguruma-dev \
     libxml2-dev \
-    supervisor \
-    nginx \
+    zlib-dev \
+    # Dependências de build (temporárias)
+    autoconf \
+    g++ \
+    gcc \
+    make \
+    linux-headers \
+    # Configurar e instalar extensões PHP
     && docker-php-ext-configure gd --with-freetype --with-jpeg \
     && docker-php-ext-install -j$(nproc) \
         pdo \
@@ -57,8 +67,13 @@ RUN apk add --no-cache \
         bcmath \
         opcache \
         pcntl \
+    # Instalar Redis via PECL
     && pecl install redis \
-    && docker-php-ext-enable redis
+    && docker-php-ext-enable redis \
+    # Limpar dependências de build para reduzir tamanho da imagem
+    && apk del autoconf g++ gcc make linux-headers \
+    # Limpar cache do APK
+    && rm -rf /var/cache/apk/* /tmp/* /var/tmp/*
 
 # Configurar PHP para produção
 COPY docker/php/php.ini /usr/local/etc/php/conf.d/custom.ini
