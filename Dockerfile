@@ -9,23 +9,19 @@ WORKDIR /app
 # Copiar package.json e package-lock.json
 COPY package*.json ./
 
-# Instalar dependências do Node
-# Usa npm ci se package-lock.json existir, senão usa npm install
+# Instalar TODAS as dependências (incluindo dev) para fazer o build
+# Vite e outras ferramentas de build são dependências de desenvolvimento
 RUN if [ -f package-lock.json ]; then \
-        npm ci --omit=dev; \
+        npm ci; \
     else \
-        npm install --production; \
+        npm install; \
     fi
 
-# Copiar código fonte
+# Copiar código fonte (necessário para o build)
 COPY . .
 
-# Build assets (se existir script build)
-RUN if grep -q '"build"' package.json; then \
-        npm run build; \
-    else \
-        echo "No build script found, skipping..."; \
-    fi
+# Build assets com Vite
+RUN npm run build
 
 
 # Stage 2: PHP Application
