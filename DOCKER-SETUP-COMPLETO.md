@@ -71,7 +71,7 @@ mkdir -p /var/www/pontoeletronico
 cd /var/www/pontoeletronico
 
 # Clonar repositório
-git clone https://github.com/seu-usuario/pontoeletronico.git .
+git clone https://github.com/seu-usuario11/pontoeletronico.git .
 ```
 
 ### 3️⃣ Configurar Ambiente

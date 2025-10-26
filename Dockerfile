@@ -10,13 +10,22 @@ WORKDIR /app
 COPY package*.json ./
 
 # Instalar dependências do Node
-RUN npm ci --only=production
+# Usa npm ci se package-lock.json existir, senão usa npm install
+RUN if [ -f package-lock.json ]; then \
+        npm ci --omit=dev; \
+    else \
+        npm install --production; \
+    fi
 
 # Copiar código fonte
 COPY . .
 
-# Build assets
-RUN npm run build
+# Build assets (se existir script build)
+RUN if grep -q '"build"' package.json; then \
+        npm run build; \
+    else \
+        echo "No build script found, skipping..."; \
+    fi
 
 
 # Stage 2: PHP Application
