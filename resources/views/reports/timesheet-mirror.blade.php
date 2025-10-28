@@ -413,6 +413,89 @@
             </div>
         </div>
 
+        @php
+            // Coleta todos os entries de todos os dias
+            $allEntriesCollection = collect();
+            foreach ($allDays as $day) {
+                $allEntriesCollection = $allEntriesCollection->merge($day['entries']);
+            }
+
+            // Calcula horas extras por tipo
+            $normalOvertimeHours = $allEntriesCollection->where('overtime_type', 'normal')->sum('overtime_hours') ?? 0;
+            $nightOvertimeHours = $allEntriesCollection->where('overtime_type', 'night')->sum('overtime_hours') ?? 0;
+            $holidayOvertimeHours = $allEntriesCollection->where('overtime_type', 'holiday')->sum('overtime_hours') ?? 0;
+            $cltViolations = $allEntriesCollection->where('clt_limit_exceeded', true)->count();
+
+            // Banco de horas (se existir)
+            $bankHoursBalance = 0;
+            if (class_exists('App\Models\OvertimeBalance')) {
+                $period = $dateFrom->format('Y-m');
+                $balance = \App\Models\OvertimeBalance::forEmployee($employee->id)
+                    ->forPeriod($period)
+                    ->first();
+                $bankHoursBalance = $balance ? $balance->balance_hours : 0;
+            }
+        @endphp
+
+        @if($normalOvertimeHours > 0 || $nightOvertimeHours > 0 || $holidayOvertimeHours > 0)
+            <div class="total-box" style="background-color: #f3e5f5;">
+                <div class="total-label">HE Normal (50%):</div>
+                <div class="total-value">
+                    @php
+                        $h = floor($normalOvertimeHours);
+                        $m = round(($normalOvertimeHours - $h) * 60);
+                    @endphp
+                    {{ sprintf('%d:%02d', $h, $m) }}
+                </div>
+            </div>
+
+            @if($nightOvertimeHours > 0)
+                <div class="total-box" style="background-color: #e8eaf6;">
+                    <div class="total-label">HE Noturna (20%):</div>
+                    <div class="total-value">
+                        @php
+                            $h = floor($nightOvertimeHours);
+                            $m = round(($nightOvertimeHours - $h) * 60);
+                        @endphp
+                        {{ sprintf('%d:%02d', $h, $m) }}
+                    </div>
+                </div>
+            @endif
+
+            @if($holidayOvertimeHours > 0)
+                <div class="total-box" style="background-color: #ffebee;">
+                    <div class="total-label">HE Feriado/Domingo (100%):</div>
+                    <div class="total-value">
+                        @php
+                            $h = floor($holidayOvertimeHours);
+                            $m = round(($holidayOvertimeHours - $h) * 60);
+                        @endphp
+                        {{ sprintf('%d:%02d', $h, $m) }}
+                    </div>
+                </div>
+            @endif
+        @endif
+
+        @if($bankHoursBalance > 0)
+            <div class="total-box" style="background-color: #e8f5e9;">
+                <div class="total-label">BANCO DE HORAS:</div>
+                <div class="total-value">
+                    @php
+                        $h = floor($bankHoursBalance);
+                        $m = round(($bankHoursBalance - $h) * 60);
+                    @endphp
+                    {{ sprintf('%d:%02d', $h, $m) }}
+                </div>
+            </div>
+        @endif
+
+        @if($cltViolations > 0)
+            <div class="total-box" style="background-color: #fff3e0; border: 2px solid #ff9800;">
+                <div class="total-label">⚠️ VIOLAÇÕES CLT (>2h/dia):</div>
+                <div class="total-value">{{ $cltViolations }} dia(s)</div>
+            </div>
+        @endif
+
         <div class="total-box">
             <div class="total-label">HORAS FALTOSAS:</div>
             <div class="total-value">

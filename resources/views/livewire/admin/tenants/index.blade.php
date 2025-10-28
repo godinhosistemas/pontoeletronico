@@ -239,22 +239,46 @@ new class extends Component {
             // Salva arquivo temporário
             $tempPath = $this->certificate_file->getRealPath();
 
+            \Log::info('Upload de certificado iniciado', [
+                'tenant_id' => $tenant->id,
+                'temp_path' => $tempPath,
+                'file_exists' => file_exists($tempPath)
+            ]);
+
             // Usa o serviço para validar e armazenar
             $certificateService = app(CertificateService::class);
-            $success = $certificateService->storeCertificate(
-                $tenant,
-                $tempPath,
-                $this->certificate_password
-            );
 
-            if ($success) {
-                session()->flash('success', 'Certificado digital cadastrado com sucesso!');
-                $this->closeCertificateModal();
+            // Primeiro valida para obter detalhes do erro
+            $validation = $certificateService->validateAndExtractInfo($tempPath, $this->certificate_password);
+
+            if ($validation && isset($validation['valid']) && $validation['valid']) {
+                // Se válido, armazena
+                $success = $certificateService->storeCertificate(
+                    $tenant,
+                    $tempPath,
+                    $this->certificate_password
+                );
+
+                if ($success) {
+                    session()->flash('success', 'Certificado digital cadastrado com sucesso!');
+                    $this->closeCertificateModal();
+                } else {
+                    session()->flash('error', 'Erro ao armazenar o certificado. Tente novamente.');
+                }
             } else {
-                session()->flash('error', 'Certificado inválido ou senha incorreta. Verifique se é um certificado ICP-Brasil válido.');
+                // Mostra erro específico
+                $errorMsg = 'Certificado inválido ou senha incorreta.';
+                if (is_array($validation) && isset($validation['error'])) {
+                    $errorMsg = $validation['error'];
+                }
+                session()->flash('error', $errorMsg);
+                \Log::warning('Certificado rejeitado', ['error' => $errorMsg]);
             }
 
         } catch (\Exception $e) {
+            \Log::error('Exceção ao processar certificado: ' . $e->getMessage(), [
+                'trace' => $e->getTraceAsString()
+            ]);
             session()->flash('error', 'Erro ao processar certificado: ' . $e->getMessage());
         }
     }

@@ -78,10 +78,23 @@ Route::middleware(['auth', 'tenant.active'])->prefix('admin')->name('admin.')->g
         return view('admin.employees.index');
     })->name('employees.index')->middleware(['can:employees.view', 'log.auth']);
 
+    // Novo Colaborador
+    Route::get('/employees/create', App\Livewire\Admin\Employees\EmployeeForm::class)
+        ->name('employees.create')->middleware(['can:employees.create', 'log.auth']);
+
+    // Editar Colaborador
+    Route::get('/employees/{employeeId}/edit', App\Livewire\Admin\Employees\EmployeeForm::class)
+        ->name('employees.edit')->middleware(['can:employees.edit', 'log.auth']);
+
     // Work Schedules - Jornadas de Trabalho
     Route::get('/work-schedules', function () {
         return view('admin.work-schedules.index');
     })->name('work-schedules.index');
+
+    // Holidays - Feriados
+    Route::get('/holidays', function () {
+        return view('admin.holidays.index');
+    })->name('holidays.index');
 
     // Time Entries - Aprovação de pontos (apenas gestores)
     Route::get('/timesheet/approvals', function () {
@@ -280,3 +293,17 @@ Route::middleware(['auth', 'tenant.active'])->prefix('tenant')->name('tenant.')-
 // Webhooks (públicos - sem autenticação)
 Route::post('/webhooks/asaas', [WebhookController::class, 'asaas'])->name('webhook.asaas');
 Route::post('/webhooks/mercadopago', [WebhookController::class, 'mercadopago'])->name('webhook.mercadopago');
+
+// ============================================================
+// ROTAS DE SINCRONIZAÇÃO DE TEMPO (NTP)
+// ============================================================
+
+// API para obter timestamp do servidor (sincronizado com NTP Brasil)
+Route::get('/api/server-time', function () {
+    return response()->json([
+        'timestamp' => time(),
+        'datetime' => now()->format('Y-m-d H:i:s'),
+        'timezone' => config('app.timezone'),
+        'iso8601' => now()->toIso8601String(),
+    ]);
+})->name('api.server-time');

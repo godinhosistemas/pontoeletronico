@@ -42,6 +42,13 @@ class TimeEntry extends Model
         'adjustment_reason',
         'adjusted_by',
         'adjusted_at',
+        'overtime_type',
+        'overtime_hours',
+        'overtime_percentage',
+        'is_night_shift',
+        'clt_limit_validated',
+        'clt_limit_exceeded',
+        'clt_violation_notes',
     ];
 
     protected $casts = [
@@ -49,6 +56,11 @@ class TimeEntry extends Model
         'approved_at' => 'datetime',
         'adjusted_at' => 'datetime',
         'has_adjustment' => 'boolean',
+        'overtime_hours' => 'decimal:2',
+        'overtime_percentage' => 'decimal:2',
+        'is_night_shift' => 'boolean',
+        'clt_limit_validated' => 'boolean',
+        'clt_limit_exceeded' => 'boolean',
     ];
 
     /**
@@ -326,5 +338,73 @@ class TimeEntry extends Model
             'vacation' => 'Férias',
             default => 'Indefinido',
         };
+    }
+
+    /**
+     * Obtém o texto do tipo de hora extra
+     */
+    public function getOvertimeTypeTextAttribute(): string
+    {
+        return match($this->overtime_type) {
+            'normal' => 'Hora Extra Normal (50%)',
+            'night' => 'Hora Extra Noturna (20%)',
+            'holiday' => 'Hora Extra Feriado/Domingo (100%)',
+            'none' => 'Sem hora extra',
+            default => 'Indefinido',
+        };
+    }
+
+    /**
+     * Obtém a cor do tipo de hora extra
+     */
+    public function getOvertimeTypeColorAttribute(): string
+    {
+        return match($this->overtime_type) {
+            'normal' => 'purple',
+            'night' => 'indigo',
+            'holiday' => 'red',
+            'none' => 'gray',
+            default => 'gray',
+        };
+    }
+
+    /**
+     * Formata as horas extras em HH:MM
+     */
+    public function getFormattedOvertimeHoursAttribute(): string
+    {
+        if (!$this->overtime_hours || $this->overtime_hours <= 0) {
+            return '00:00';
+        }
+
+        $hours = floor($this->overtime_hours);
+        $minutes = round(($this->overtime_hours - $hours) * 60);
+
+        return sprintf('%02d:%02d', $hours, $minutes);
+    }
+
+    /**
+     * Verifica se tem horas extras
+     */
+    public function hasOvertime(): bool
+    {
+        return $this->overtime_hours > 0 && $this->overtime_type !== 'none';
+    }
+
+    /**
+     * Scope para filtrar registros com horas extras
+     */
+    public function scopeWithOvertime($query)
+    {
+        return $query->where('overtime_hours', '>', 0)
+                     ->where('overtime_type', '!=', 'none');
+    }
+
+    /**
+     * Scope para filtrar registros que excederam limite CLT
+     */
+    public function scopeExceededCltLimit($query)
+    {
+        return $query->where('clt_limit_exceeded', true);
     }
 }

@@ -5,6 +5,7 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class Employee extends Model
 {
@@ -39,6 +40,27 @@ class Employee extends Model
         'allowed_longitude',
         'geofence_radius',
         'require_geolocation',
+        // Dados Pessoais Estendidos
+        'rg', 'rg_issuer', 'rg_issue_date',
+        'ctps', 'ctps_series', 'ctps_uf',
+        'pis_pasep', 'voter_registration', 'voter_zone', 'voter_section',
+        'military_certificate', 'cnh', 'cnh_category', 'cnh_expiry',
+        'gender', 'marital_status', 'nationality', 'birth_place',
+        'mothers_name', 'fathers_name', 'education_level',
+        // Endereço Estendido
+        'address_number', 'address_complement', 'neighborhood',
+        // Dados Contratuais
+        'contract_type', 'contract_number', 'contract_start_date', 'contract_end_date',
+        'workload_hours', 'cost_center', 'immediate_supervisor', 'has_benefits',
+        // Dados Bancários
+        'bank_name', 'bank_code', 'bank_agency', 'bank_account', 'bank_account_type', 'pix_key',
+        // Saúde
+        'health_insurance', 'health_insurance_number', 'blood_type',
+        'allergies', 'medications', 'health_conditions',
+        // Exames Médicos
+        'admission_exam_date', 'next_periodic_exam_date', 'aso_number',
+        // Outros
+        'notes',
     ];
 
     protected $casts = [
@@ -48,6 +70,14 @@ class Employee extends Model
         'work_schedule' => 'array',
         'is_active' => 'boolean',
         'salary' => 'decimal:2',
+        'rg_issue_date' => 'date',
+        'cnh_expiry' => 'date',
+        'contract_start_date' => 'date',
+        'contract_end_date' => 'date',
+        'workload_hours' => 'decimal:2',
+        'has_benefits' => 'boolean',
+        'admission_exam_date' => 'date',
+        'next_periodic_exam_date' => 'date',
     ];
 
     /**
@@ -64,6 +94,56 @@ class Employee extends Model
     public function workSchedule(): BelongsTo
     {
         return $this->belongsTo(WorkSchedule::class, 'work_schedule_id');
+    }
+
+    /**
+     * Relacionamento com Dependentes
+     */
+    public function dependents(): HasMany
+    {
+        return $this->hasMany(EmployeeDependent::class);
+    }
+
+    /**
+     * Relacionamento com Contatos de Emergência
+     */
+    public function emergencyContacts(): HasMany
+    {
+        return $this->hasMany(EmployeeEmergencyContact::class);
+    }
+
+    /**
+     * Relacionamento com Documentos
+     */
+    public function documents(): HasMany
+    {
+        return $this->hasMany(EmployeeDocument::class);
+    }
+
+    /**
+     * Relacionamento com Histórico
+     */
+    public function history(): HasMany
+    {
+        return $this->hasMany(EmployeeHistory::class)->orderBy('event_date', 'desc');
+    }
+
+    /**
+     * Relacionamento com Compliance
+     */
+    public function compliance(): HasMany
+    {
+        return $this->hasMany(EmployeeCompliance::class);
+    }
+
+    /**
+     * Compliance items pendentes
+     */
+    public function pendingCompliance(): HasMany
+    {
+        return $this->hasMany(EmployeeCompliance::class)
+            ->where('status', 'Pendente')
+            ->orWhere('status', 'Vencido');
     }
 
     /**

@@ -142,6 +142,80 @@
                         </li>
                         @endcan
 
+                        @can('employees.view')
+                        <!-- Recursos Humanos -->
+                        <li x-data="{ open: {{ request()->routeIs('admin.employees.*') ? 'true' : 'false' }} }">
+                            <button @click="open = !open" class="flex items-center justify-between w-full p-2 text-gray-300 rounded-lg hover:bg-slate-700 hover:text-white transition-all duration-200">
+                                <div class="flex items-center">
+                                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 13.255A23.931 23.931 0 0112 15c-3.183 0-6.22-.62-9-1.745M16 6V4a2 2 0 00-2-2h-4a2 2 0 00-2 2v2m4 6h.01M5 20h14a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"></path>
+                                    </svg>
+                                    <span class="ml-2">Recursos Humanos</span>
+                                </div>
+                                <svg class="w-3 h-3 transition-transform" :class="open ? 'rotate-180' : ''" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path>
+                                </svg>
+                            </button>
+                            <ul x-show="open" x-collapse class="ml-4 mt-1 space-y-1">
+                                <li>
+                                    <a href="{{ route('admin.employees.index') }}" class="flex items-center p-2 text-gray-400 rounded-lg hover:bg-slate-700 hover:text-white transition-all duration-200 text-xs {{ request()->routeIs('admin.employees.index') ? 'bg-slate-700 text-white' : '' }}">
+                                        <span class="w-1 h-1 bg-gray-500 rounded-full mr-2"></span>
+                                        Lista de Colaboradores
+                                    </a>
+                                </li>
+                                <li>
+                                    <a href="{{ route('admin.employees.create') }}" class="flex items-center p-2 text-gray-400 rounded-lg hover:bg-slate-700 hover:text-white transition-all duration-200 text-xs {{ request()->routeIs('admin.employees.create') ? 'bg-slate-700 text-white' : '' }}">
+                                        <span class="w-1 h-1 bg-gray-500 rounded-full mr-2"></span>
+                                        Novo Colaborador
+                                    </a>
+                                </li>
+                                <li>
+                                    <a href="#" class="flex items-center p-2 text-gray-400 rounded-lg hover:bg-slate-700 hover:text-white transition-all duration-200 text-xs">
+                                        <span class="w-1 h-1 bg-gray-500 rounded-full mr-2"></span>
+                                        Documentos
+                                    </a>
+                                </li>
+                                <li>
+                                    <a href="#" class="flex items-center p-2 text-gray-400 rounded-lg hover:bg-slate-700 hover:text-white transition-all duration-200 text-xs">
+                                        <span class="w-1 h-1 bg-gray-500 rounded-full mr-2"></span>
+                                        Histórico
+                                    </a>
+                                </li>
+                                <li>
+                                    <a href="#" class="flex items-center p-2 text-gray-400 rounded-lg hover:bg-slate-700 hover:text-white transition-all duration-200 text-xs">
+                                        <span class="w-1 h-1 bg-gray-500 rounded-full mr-2"></span>
+                                        Compliance
+                                    </a>
+                                </li>
+                            </ul>
+                        </li>
+                        @endcan
+
+                        @can('employees.view')
+                        <!-- Horas Extras -->
+                        <li x-data="{ open: {{ request()->routeIs('admin.holidays.*') ? 'true' : 'false' }} }">
+                            <button @click="open = !open" class="flex items-center justify-between w-full p-2 text-gray-300 rounded-lg hover:bg-slate-700 hover:text-white transition-all duration-200">
+                                <div class="flex items-center">
+                                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 7h6m0 10v-3m-3 3h.01M9 17h.01M9 14h.01M12 14h.01M15 11h.01M12 11h.01M9 11h.01M7 21h10a2 2 0 002-2V5a2 2 0 00-2-2H7a2 2 0 00-2 2v14a2 2 0 002 2z"></path>
+                                    </svg>
+                                    <span class="ml-2">Horas Extras</span>
+                                </div>
+                                <svg class="w-3 h-3 transition-transform" :class="open ? 'rotate-180' : ''" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path>
+                                </svg>
+                            </button>
+                            <ul x-show="open" x-collapse class="ml-4 mt-1 space-y-1">
+                                <li>
+                                    <a href="{{ route('admin.holidays.index') }}" class="flex items-center p-2 text-gray-400 rounded-lg hover:bg-slate-700 hover:text-white transition-all duration-200 text-xs {{ request()->routeIs('admin.holidays.*') ? 'bg-slate-700 text-white' : '' }}">
+                                        <span class="w-1 h-1 bg-gray-500 rounded-full mr-2"></span>
+                                        Feriados
+                                    </a>
+                                </li>
+                            </ul>
+                        </li>
+                        @endcan
+
                         <!-- Ponto Eletrônico -->
                         <li x-data="{ open: {{ request()->routeIs('employee.clock-in', 'admin.timesheet.*', 'admin.legal-files.*') ? 'true' : 'false' }} }">
                             <button @click="open = !open" class="flex items-center justify-between w-full p-2 text-gray-300 rounded-lg hover:bg-slate-700 hover:text-white transition-all duration-200">
@@ -287,7 +361,7 @@
                             <div class="px-4 py-2 bg-gradient-to-r from-blue-50 to-indigo-50 rounded-lg border border-blue-200">
                                 <p class="text-xs text-gray-600">Data/Hora</p>
                                 <p class="text-sm font-semibold text-gray-900" id="current-time">
-                                    {{ now()->format('d/m/Y H:i') }}
+                                    {{ now()->format('d/m/Y H:i:s') }}
                                 </p>
                             </div>
                         </div>
@@ -320,6 +394,7 @@
                 <!-- Page Content -->
                 <main>
                     @yield('content')
+                    {{ $slot ?? '' }}
                 </main>
             </div>
         </div>
@@ -339,6 +414,57 @@
                         });
                 });
             }
+        </script>
+
+        <!-- Auto-update Date/Time -->
+        <script>
+            function updateDateTime() {
+                const now = new Date();
+
+                // Formata a data e hora no padrão brasileiro
+                const day = String(now.getDate()).padStart(2, '0');
+                const month = String(now.getMonth() + 1).padStart(2, '0');
+                const year = now.getFullYear();
+                const hours = String(now.getHours()).padStart(2, '0');
+                const minutes = String(now.getMinutes()).padStart(2, '0');
+                const seconds = String(now.getSeconds()).padStart(2, '0');
+
+                const formattedDateTime = `${day}/${month}/${year} ${hours}:${minutes}:${seconds}`;
+
+                const timeElement = document.getElementById('current-time');
+                if (timeElement) {
+                    timeElement.textContent = formattedDateTime;
+                }
+            }
+
+            // Atualiza imediatamente ao carregar a página
+            updateDateTime();
+
+            // Atualiza a cada 1 segundo
+            setInterval(updateDateTime, 1000);
+
+            // Sincroniza com o servidor a cada 5 minutos para evitar drift
+            setInterval(async function() {
+                try {
+                    const response = await fetch('/api/server-time');
+                    const data = await response.json();
+
+                    if (data.timestamp) {
+                        const serverTime = new Date(data.timestamp * 1000);
+                        const localTime = new Date();
+                        const timeDiff = Math.abs(serverTime - localTime);
+
+                        // Se a diferença for maior que 5 segundos, ajusta
+                        if (timeDiff > 5000) {
+                            console.log('Ajustando relógio local com servidor (diferença: ' + timeDiff + 'ms)');
+                            // Força atualização na próxima iteração
+                            updateDateTime();
+                        }
+                    }
+                } catch (error) {
+                    console.log('Erro ao sincronizar com servidor:', error);
+                }
+            }, 300000); // 5 minutos
         </script>
     </body>
 </html>

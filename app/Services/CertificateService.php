@@ -19,37 +19,101 @@ class CertificateService
     public function validateAndExtractInfo(string $certificatePath, string $password)
     {
         try {
+            \Log::info('Iniciando validação de certificado', [
+                'path' => $certificatePath,
+                'file_exists' => file_exists($certificatePath),
+                'file_size' => file_exists($certificatePath) ? filesize($certificatePath) : 0
+            ]);
+
             // Lê o conteúdo do certificado
             $certificateContent = file_get_contents($certificatePath);
 
             if (!$certificateContent) {
-                return false;
+                \Log::error('Não foi possível ler o conteúdo do certificado');
+                return [
+                    'valid' => false,
+                    'error' => 'Não foi possível ler o arquivo do certificado'
+                ];
             }
+
+            \Log::info('Certificado lido com sucesso', [
+                'content_length' => strlen($certificateContent)
+            ]);
 
             // Tenta ler o certificado PFX/P12
             $certificates = [];
             $success = openssl_pkcs12_read($certificateContent, $certificates, $password);
 
             if (!$success) {
-                return false;
+                $opensslError = openssl_error_string();
+                \Log::warning('Falha ao ler certificado PKCS12 - tentando conversão', [
+                    'openssl_error' => $opensslError,
+                    'password_length' => strlen($password)
+                ]);
+
+                // Se o erro for de algoritmo não suportado, tenta converter
+                if (stripos($opensslError, 'unsupported') !== false) {
+                    \Log::info('Detectado certificado com algoritmo legado - iniciando conversão');
+
+                    $convertedContent = $this->convertLegacyCertificate($certificateContent, $password);
+
+                    if ($convertedContent) {
+                        // Tenta ler o certificado convertido
+                        $success = openssl_pkcs12_read($convertedContent, $certificates, $password);
+
+                        if ($success) {
+                            \Log::info('Certificado legado convertido com sucesso');
+                            // Atualiza o conteúdo para usar o convertido
+                            $certificateContent = $convertedContent;
+                        }
+                    }
+                }
+
+                // Se ainda não teve sucesso, retorna erro
+                if (!$success) {
+                    \Log::error('Falha ao ler certificado após tentativa de conversão', [
+                        'openssl_error' => $opensslError
+                    ]);
+                    return [
+                        'valid' => false,
+                        'error' => 'Senha incorreta ou certificado inválido',
+                        'openssl_error' => $opensslError
+                    ];
+                }
             }
+
+            \Log::info('Certificado PKCS12 lido com sucesso');
 
             // Extrai informações do certificado
             $certData = openssl_x509_parse($certificates['cert']);
 
             if (!$certData) {
-                return false;
+                \Log::error('Não foi possível extrair dados do certificado');
+                return [
+                    'valid' => false,
+                    'error' => 'Certificado corrompido ou inválido'
+                ];
             }
+
+            \Log::info('Dados do certificado extraídos', [
+                'subject' => $certData['subject']['CN'] ?? 'N/A',
+                'issuer' => $this->formatDN($certData['issuer'])
+            ]);
 
             // Verifica se é certificado ICP-Brasil
             $isIcpBrasil = $this->isIcpBrasilCertificate($certData);
 
             if (!$isIcpBrasil) {
+                \Log::warning('Certificado não é ICP-Brasil', [
+                    'issuer' => $this->formatDN($certData['issuer'])
+                ]);
                 return [
                     'valid' => false,
                     'error' => 'Certificado não é da cadeia ICP-Brasil'
                 ];
             }
+
+            \Log::info('Certificado validado como ICP-Brasil');
 
             // Determina o tipo de certificado (A1 ou A3)
             $certificateType = $this->determineCertificateType($certificatePath);
@@ -62,7 +126,15 @@ class CertificateService
             $now = Carbon::now();
             $isValid = $now->between($validFrom, $validUntil);
 
-            return [
+            if (!$isValid) {
+                \Log::warning('Certificado fora do período de validade', [
+                    'valid_from' => $validFrom->toDateString(),
+                    'valid_until' => $validUntil->toDateString(),
+                    'current_date' => $now->toDateString()
+                ]);
+            }
+
+            $result = [
                 'valid' => $isValid,
                 'type' => $certificateType,
                 'issuer' => $this->formatDN($certData['issuer']),
@@ -79,11 +151,26 @@ class CertificateService
                     'fingerprint' => openssl_x509_fingerprint($certificates['cert'], 'sha256'),
                 ],
                 'certificates' => $certificates, // Guarda para uso posterior na assinatura
+                'certificate_content' => $certificateContent, // Conteúdo do certificado (possivelmente convertido)
             ];
 
+            \Log::info('Certificado validado com sucesso', [
+                'valid' => $isValid,
+                'expires_in_days' => $result['days_remaining'],
+                'company_name' => $result['company_name']
+            ]);
+
+            return $result;
+
         } catch (\Exception $e) {
-            \Log::error('Erro ao validar certificado: ' . $e->getMessage());
-            return false;
+            \Log::error('Erro ao validar certificado: ' . $e->getMessage(), [
+                'exception' => get_class($e),
+                'trace' => $e->getTraceAsString()
+            ]);
+            return [
+                'valid' => false,
+                'error' => 'Erro ao processar certificado: ' . $e->getMessage()
+            ];
         }
     }
 
@@ -111,8 +198,9 @@ class CertificateService
             }
 
             // Armazena o novo certificado de forma segura
+            // Usa o conteúdo validado (que pode ter sido convertido de legado para moderno)
             $fileName = 'certificates/' . $tenant->id . '_' . time() . '.pfx';
-            $certificateContent = file_get_contents($certificatePath);
+            $certificateContent = $certInfo['certificate_content'] ?? file_get_contents($certificatePath);
             Storage::disk('local')->put($fileName, $certificateContent);
 
             // Criptografa a senha
@@ -383,5 +471,105 @@ class CertificateService
         }
 
         return $extensions;
+    }
+
+    /**
+     * Converte certificado com algoritmos legados para formato moderno
+     * Necessário para certificados antigos com RC2-40-CBC ou 3DES no OpenSSL 3.x
+     *
+     * @param string $certificateContent Conteúdo do certificado original
+     * @param string $password Senha do certificado
+     * @return string|false Conteúdo do certificado convertido ou false em caso de erro
+     */
+    private function convertLegacyCertificate(string $certificateContent, string $password)
+    {
+        try {
+            // Salva certificado original em arquivo temporário
+            $tempInput = tempnam(sys_get_temp_dir(), 'cert_input_');
+            $tempCert = tempnam(sys_get_temp_dir(), 'cert_');
+            $tempKey = tempnam(sys_get_temp_dir(), 'key_');
+            $tempOutput = tempnam(sys_get_temp_dir(), 'cert_output_');
+
+            file_put_contents($tempInput, $certificateContent);
+
+            // Extrai certificado usando comando openssl com flag -legacy
+            $cmd1 = sprintf(
+                'openssl pkcs12 -in "%s" -out "%s" -clcerts -nokeys -passin pass:%s -legacy 2>&1',
+                $tempInput,
+                $tempCert,
+                escapeshellarg($password)
+            );
+
+            exec($cmd1, $output1, $return1);
+
+            if ($return1 !== 0) {
+                \Log::error('Erro ao extrair certificado na conversão', [
+                    'output' => implode("\n", $output1)
+                ]);
+                @unlink($tempInput);
+                @unlink($tempCert);
+                @unlink($tempKey);
+                @unlink($tempOutput);
+                return false;
+            }
+
+            // Extrai chave privada usando comando openssl com flag -legacy
+            $cmd2 = sprintf(
+                'openssl pkcs12 -in "%s" -out "%s" -nocerts -nodes -passin pass:%s -legacy 2>&1',
+                $tempInput,
+                $tempKey,
+                escapeshellarg($password)
+            );
+
+            exec($cmd2, $output2, $return2);
+
+            if ($return2 !== 0) {
+                \Log::error('Erro ao extrair chave privada na conversão', [
+                    'output' => implode("\n", $output2)
+                ]);
+                @unlink($tempInput);
+                @unlink($tempCert);
+                @unlink($tempKey);
+                @unlink($tempOutput);
+                return false;
+            }
+
+            // Recria PFX com algoritmos modernos
+            $cmd3 = sprintf(
+                'openssl pkcs12 -export -out "%s" -in "%s" -inkey "%s" -passout pass:%s 2>&1',
+                $tempOutput,
+                $tempCert,
+                $tempKey,
+                escapeshellarg($password)
+            );
+
+            exec($cmd3, $output3, $return3);
+
+            if ($return3 !== 0) {
+                \Log::error('Erro ao criar novo PFX na conversão', [
+                    'output' => implode("\n", $output3)
+                ]);
+                @unlink($tempInput);
+                @unlink($tempCert);
+                @unlink($tempKey);
+                @unlink($tempOutput);
+                return false;
+            }
+
+            // Lê o certificado convertido
+            $convertedContent = file_get_contents($tempOutput);
+
+            // Limpa arquivos temporários
+            @unlink($tempInput);
+            @unlink($tempCert);
+            @unlink($tempKey);
+            @unlink($tempOutput);
+
+            return $convertedContent;
+
+        } catch (\Exception $e) {
+            \Log::error('Exceção ao converter certificado legado: ' . $e->getMessage());
+            return false;
+        }
     }
 }
